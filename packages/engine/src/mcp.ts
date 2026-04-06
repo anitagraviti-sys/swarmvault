@@ -10,7 +10,7 @@ import { compileVault, getWorkspaceInfo, lintVault, listPages, queryVault, readP
 import { readJsonFile } from "./utils.js";
 import type { GraphArtifact } from "./types.js";
 
-const SERVER_VERSION = "0.1.2";
+const SERVER_VERSION = "0.1.3";
 
 export async function createMcpServer(rootDir: string): Promise<McpServer> {
   const server = new McpServer({
