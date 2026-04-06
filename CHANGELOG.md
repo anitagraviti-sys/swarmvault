@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Bundled the built graph viewer assets into `@swarmvaultai/engine` so `npm install -g @swarmvaultai/cli` works without fetching the viewer package at install time
+- Kept the public docs and package metadata improvements from `0.1.1`
+
 ## 0.1.1
 
 - Rewrote the public repo and package documentation to explain the product, workflow, and install path

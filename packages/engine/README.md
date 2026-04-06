@@ -95,4 +95,4 @@ Important artifacts include:
 
 - The engine expects Node `>=24`
 - The local search layer currently uses the built-in `node:sqlite` module, which may emit an experimental warning in Node 24
-- The graph viewer is served from the companion `@swarmvaultai/viewer` package build output
+- The viewer source lives in the companion `@swarmvaultai/viewer` package, and the built assets are bundled into the engine package for CLI installs

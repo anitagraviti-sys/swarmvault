@@ -35,7 +35,7 @@ SwarmVault requires Node `>=24`.
 npm install -g @swarmvaultai/cli
 ```
 
-This installs the `swarmvault` command. The legacy alias `vault` is also available.
+This installs the `swarmvault` command. The legacy alias `vault` is also available, and `graph serve` works from the global install.
 
 ## Quickstart
 

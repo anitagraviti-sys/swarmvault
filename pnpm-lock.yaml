@@ -33,9 +33,6 @@ importers:
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
-      '@swarmvaultai/viewer':
-        specifier: workspace:*
-        version: link:../viewer
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3

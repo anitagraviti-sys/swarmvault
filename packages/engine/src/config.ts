@@ -97,7 +97,7 @@ export function resolvePaths(rootDir: string, config?: VaultConfig, configPath =
     manifestsDir: path.join(stateDir, "manifests"),
     extractsDir: path.join(stateDir, "extracts"),
     analysesDir: path.join(stateDir, "analyses"),
-    viewerDistDir: path.resolve(moduleDir, "../../viewer/dist"),
+    viewerDistDir: path.resolve(moduleDir, "viewer"),
     graphPath: path.join(stateDir, "graph.json"),
     searchDbPath: path.join(stateDir, "search.sqlite"),
     compileStatePath: path.join(stateDir, "compile-state.json"),
