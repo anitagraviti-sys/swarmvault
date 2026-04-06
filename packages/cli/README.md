@@ -1,8 +1,8 @@
 # @swarmvaultai/cli
 
-`@swarmvaultai/cli` is the globally installable entry point for SwarmVault.
+`@swarmvaultai/cli` is the global command-line entry point for SwarmVault.
 
-It gives you the `swarmvault` command for creating and operating a local-first LLM knowledge vault that compiles into markdown, graph data, and local search artifacts.
+It gives you the `swarmvault` command for building a local-first knowledge vault from files, URLs, browser clips, and saved query outputs.
 
 ## Install
 
@@ -25,7 +25,7 @@ cd my-vault
 swarmvault init
 swarmvault ingest ./notes.md
 swarmvault compile
-swarmvault query "What themes keep recurring?" --save
+swarmvault query "What keeps recurring?" --save
 swarmvault graph serve
 ```
 
@@ -33,8 +33,9 @@ swarmvault graph serve
 
 ### `swarmvault init`
 
-Creates a new SwarmVault workspace in the current directory, including:
+Create a workspace with:
 
+- `inbox/`
 - `raw/`
 - `wiki/`
 - `state/`
@@ -43,11 +44,15 @@ Creates a new SwarmVault workspace in the current directory, including:
 
 ### `swarmvault ingest <path-or-url>`
 
-Adds a local file or URL to the vault and records a manifest in `state/manifests/`.
+Ingest a local file path or URL into immutable source storage and write a manifest to `state/manifests/`.
+
+### `swarmvault inbox import [dir]`
+
+Import supported files from the configured inbox directory. This is meant for browser-clipper style markdown bundles and other capture workflows. Local image and asset references are preserved and copied into canonical storage under `raw/assets/`.
 
 ### `swarmvault compile`
 
-Compiles the current manifests into:
+Compile the current manifests into:
 
 - generated markdown in `wiki/`
 - structured graph data in `state/graph.json`
@@ -55,25 +60,42 @@ Compiles the current manifests into:
 
 ### `swarmvault query "<question>" [--save]`
 
-Queries the compiled vault. Use `--save` to write the result into `wiki/outputs/` so the answer becomes part of the vault.
+Query the compiled vault. With `--save`, the answer is written into `wiki/outputs/` so the result becomes part of the vault.
 
 ### `swarmvault lint`
 
-Runs anti-drift checks and other health checks against the current vault state.
+Run anti-drift and vault health checks such as stale pages, missing graph artifacts, and other structural issues.
+
+### `swarmvault watch [--lint] [--debounce <ms>]`
+
+Watch the inbox directory and trigger import and compile cycles when files change. With `--lint`, each cycle also runs linting. Run metadata is appended to `state/jobs.ndjson`.
+
+### `swarmvault mcp`
+
+Run SwarmVault as a local MCP server over stdio. This exposes the vault to compatible clients and agents through tools and resources such as:
+
+- `workspace_info`
+- `search_pages`
+- `read_page`
+- `list_sources`
+- `query_vault`
+- `ingest_input`
+- `compile_vault`
+- `lint_vault`
 
 ### `swarmvault graph serve`
 
-Starts the local graph UI backed by `state/graph.json`.
+Start the local graph UI backed by `state/graph.json`.
 
 ### `swarmvault install --agent <codex|claude|cursor>`
 
-Writes agent-specific rules into the current project so your coding agent understands the SwarmVault directory contract and workflow.
+Install agent-specific rules into the current project so an agent understands the SwarmVault workspace contract and workflow.
 
 ## Provider Configuration
 
-SwarmVault defaults to a local heuristic provider so the CLI can run without API keys, but real vaults should usually point at an actual model provider.
+SwarmVault defaults to a local `heuristic` provider so the CLI works without API keys, but real vaults will usually point at an actual model provider.
 
-Inside an existing `swarmvault.config.json`, your `providers` and `tasks` sections can look like this:
+Example:
 
 ```json
 {
@@ -94,10 +116,16 @@ Inside an existing `swarmvault.config.json`, your `providers` and `tasks` sectio
 }
 ```
 
-Generic OpenAI-compatible APIs are also supported through config alone when the provider follows the same request shape closely enough.
+Generic OpenAI-compatible APIs are supported through config when the provider follows the OpenAI request shape closely enough.
 
 ## Troubleshooting
 
-- If `graph serve` says the viewer build is missing, run `pnpm build` in the repository first
+- If you are running from a source checkout and `graph serve` says the viewer build is missing, run `pnpm build` in the repository first
 - If a provider claims OpenAI compatibility but fails structured generation, declare only the capabilities it actually supports
-- Node 24 may emit an experimental warning for `node:sqlite`; this is expected in the current release
+- Node 24 may emit an experimental warning for `node:sqlite`; that is expected in the current release
+
+## Links
+
+- Website: https://www.swarmvault.ai
+- Docs: https://www.swarmvault.ai/docs
+- GitHub: https://github.com/swarmclawai/swarmvault

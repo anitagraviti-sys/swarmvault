@@ -76,6 +76,7 @@ export interface VaultConfig {
     wikiDir: string;
     stateDir: string;
     agentDir: string;
+    inboxDir: string;
   };
   providers: Record<string, ProviderConfig>;
   tasks: {
@@ -93,9 +94,12 @@ export interface VaultConfig {
 export interface ResolvedPaths {
   rootDir: string;
   rawDir: string;
+  rawSourcesDir: string;
+  rawAssetsDir: string;
   wikiDir: string;
   stateDir: string;
   agentDir: string;
+  inboxDir: string;
   manifestsDir: string;
   extractsDir: string;
   analysesDir: string;
@@ -103,7 +107,14 @@ export interface ResolvedPaths {
   graphPath: string;
   searchDbPath: string;
   compileStatePath: string;
+  jobsLogPath: string;
   configPath: string;
+}
+
+export interface SourceAttachment {
+  path: string;
+  mimeType: string;
+  originalPath?: string;
 }
 
 export interface SourceManifest {
@@ -119,6 +130,7 @@ export interface SourceManifest {
   contentHash: string;
   createdAt: string;
   updatedAt: string;
+  attachments?: SourceAttachment[];
 }
 
 export interface AnalyzedTerm {
@@ -215,4 +227,41 @@ export interface LintFinding {
   code: string;
   message: string;
   pagePath?: string;
+}
+
+export interface InboxImportSkip {
+  path: string;
+  reason: string;
+}
+
+export interface InboxImportResult {
+  inputDir: string;
+  scannedCount: number;
+  attachmentCount: number;
+  imported: SourceManifest[];
+  skipped: InboxImportSkip[];
+}
+
+export interface WatchOptions {
+  lint?: boolean;
+  debounceMs?: number;
+}
+
+export interface WatchRunRecord {
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  inputDir: string;
+  reasons: string[];
+  importedCount: number;
+  scannedCount: number;
+  attachmentCount: number;
+  changedPages: string[];
+  lintFindingCount?: number;
+  success: boolean;
+  error?: string;
+}
+
+export interface WatchController {
+  close(): Promise<void>;
 }

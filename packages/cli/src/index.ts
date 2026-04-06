@@ -3,12 +3,15 @@ import { Command } from "commander";
 import process from "node:process";
 import {
   compileVault,
+  importInbox,
   ingestInput,
   initVault,
   installAgent,
   lintVault,
   queryVault,
-  startGraphServer
+  startGraphServer,
+  startMcpServer,
+  watchVault
 } from "@swarmvaultai/engine";
 
 const program = new Command();
@@ -33,6 +36,18 @@ program
   .action(async (input: string) => {
     const manifest = await ingestInput(process.cwd(), input);
     process.stdout.write(`${manifest.sourceId}\n`);
+  });
+
+const inbox = program.command("inbox").description("Inbox and capture workflows.");
+inbox
+  .command("import")
+  .description("Import supported files from the configured inbox directory.")
+  .argument("[dir]", "Optional inbox directory override")
+  .action(async (dir?: string) => {
+    const result = await importInbox(process.cwd(), dir);
+    process.stdout.write(
+      `Imported ${result.imported.length} source(s) from ${result.inputDir}. Scanned: ${result.scannedCount}. Attachments: ${result.attachmentCount}. Skipped: ${result.skipped.length}.\n`
+    );
   });
 
 program
@@ -86,6 +101,35 @@ graph
     process.stdout.write(`Graph viewer running at http://localhost:${server.port}\n`);
     process.on("SIGINT", async () => {
       await server.close();
+      process.exit(0);
+    });
+  });
+
+program
+  .command("watch")
+  .description("Watch the inbox directory and run import/compile cycles on changes.")
+  .option("--lint", "Run lint after each compile cycle", false)
+  .option("--debounce <ms>", "Debounce window in milliseconds", "900")
+  .action(async (options: { lint?: boolean; debounce?: string }) => {
+    const debounceMs = Number.parseInt(options.debounce ?? "900", 10);
+    const controller = await watchVault(process.cwd(), {
+      lint: options.lint ?? false,
+      debounceMs: Number.isFinite(debounceMs) ? debounceMs : 900
+    });
+    process.stdout.write("Watching inbox for changes. Press Ctrl+C to stop.\n");
+    process.on("SIGINT", async () => {
+      await controller.close();
+      process.exit(0);
+    });
+  });
+
+program
+  .command("mcp")
+  .description("Run SwarmVault as a local MCP server over stdio.")
+  .action(async () => {
+    const controller = await startMcpServer(process.cwd());
+    process.on("SIGINT", async () => {
+      await controller.close();
       process.exit(0);
     });
   });

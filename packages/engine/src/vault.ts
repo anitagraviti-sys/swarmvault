@@ -9,7 +9,18 @@ import { appendLogEntry } from "./logs.js";
 import { buildAggregatePage, buildIndexPage, buildOutputPage, buildSectionIndex, buildSourcePage } from "./markdown.js";
 import { getProviderForTask } from "./providers/registry.js";
 import { rebuildSearchIndex, searchPages } from "./search.js";
-import type { CompileResult, GraphArtifact, GraphEdge, GraphNode, GraphPage, LintFinding, QueryResult, SourceAnalysis, SourceManifest } from "./types.js";
+import type {
+  CompileResult,
+  GraphArtifact,
+  GraphEdge,
+  GraphNode,
+  GraphPage,
+  LintFinding,
+  QueryResult,
+  SearchResult,
+  SourceAnalysis,
+  SourceManifest
+} from "./types.js";
 import { ensureDir, fileExists, normalizeWhitespace, readJsonFile, slugify, truncate, uniqueBy, writeFileIfChanged, writeJsonFile } from "./utils.js";
 
 function buildGraph(manifests: SourceManifest[], analyses: SourceAnalysis[], pages: GraphPage[]): GraphArtifact {
@@ -248,6 +259,71 @@ export async function queryVault(rootDir: string, question: string, save = false
 
   await appendLogEntry(rootDir, "query", question, [`citations=${citations.join(",") || "none"}`, `saved=${Boolean(savedTo)}`]);
   return { answer, savedTo, citations };
+}
+
+export async function searchVault(rootDir: string, query: string, limit = 5): Promise<SearchResult[]> {
+  const { paths } = await loadVaultConfig(rootDir);
+  if (!(await fileExists(paths.searchDbPath))) {
+    await compileVault(rootDir);
+  }
+
+  return searchPages(paths.searchDbPath, query, limit);
+}
+
+export async function listPages(rootDir: string): Promise<GraphPage[]> {
+  const { paths } = await loadVaultConfig(rootDir);
+  const graph = await readJsonFile<GraphArtifact>(paths.graphPath);
+  return graph?.pages ?? [];
+}
+
+export async function readPage(rootDir: string, relativePath: string): Promise<{
+  path: string;
+  title: string;
+  frontmatter: Record<string, unknown>;
+  content: string;
+} | null> {
+  const { paths } = await loadVaultConfig(rootDir);
+  const absolutePath = path.resolve(paths.wikiDir, relativePath);
+  if (!absolutePath.startsWith(paths.wikiDir) || !(await fileExists(absolutePath))) {
+    return null;
+  }
+
+  const raw = await fs.readFile(absolutePath, "utf8");
+  const parsed = matter(raw);
+  return {
+    path: relativePath,
+    title: typeof parsed.data.title === "string" ? parsed.data.title : path.basename(relativePath, path.extname(relativePath)),
+    frontmatter: parsed.data,
+    content: parsed.content
+  };
+}
+
+export async function getWorkspaceInfo(rootDir: string): Promise<{
+  rootDir: string;
+  configPath: string;
+  rawDir: string;
+  wikiDir: string;
+  stateDir: string;
+  agentDir: string;
+  inboxDir: string;
+  sourceCount: number;
+  pageCount: number;
+}> {
+  const { paths } = await loadVaultConfig(rootDir);
+  const manifests = await listManifests(rootDir);
+  const pages = await listPages(rootDir);
+
+  return {
+    rootDir,
+    configPath: paths.configPath,
+    rawDir: paths.rawDir,
+    wikiDir: paths.wikiDir,
+    stateDir: paths.stateDir,
+    agentDir: paths.agentDir,
+    inboxDir: paths.inboxDir,
+    sourceCount: manifests.length,
+    pageCount: pages.length
+  };
 }
 
 export async function lintVault(rootDir: string): Promise<LintFinding[]> {

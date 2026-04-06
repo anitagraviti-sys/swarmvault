@@ -2,7 +2,7 @@
 
 `@swarmvaultai/engine` is the runtime library behind SwarmVault.
 
-It provides the ingest, compile, query, lint, provider, graph, search, and viewer-serving primitives used by the CLI.
+It exposes the primitives for initializing a workspace, ingesting sources, importing an inbox, compiling a wiki, querying the vault, running lint, serving the graph viewer, watching the inbox, and exposing the vault over MCP.
 
 ## Who This Is For
 
@@ -10,7 +10,8 @@ Use this package if you want to:
 
 - build your own interface on top of the SwarmVault runtime
 - integrate vault operations into another Node application
-- customize provider loading or workspace orchestration without shelling out to the CLI
+- embed watch or MCP behavior without shelling out to the CLI
+- customize provider loading or orchestration in code
 
 If you only want to use SwarmVault as a tool, install `@swarmvaultai/cli` instead.
 
@@ -19,48 +20,54 @@ If you only want to use SwarmVault as a tool, install `@swarmvaultai/cli` instea
 ```ts
 import {
   compileVault,
-  createProvider,
+  createMcpServer,
   defaultVaultConfig,
+  importInbox,
   ingestInput,
   initVault,
   installAgent,
   lintVault,
   loadVaultConfig,
   queryVault,
-  startGraphServer
+  searchVault,
+  startGraphServer,
+  startMcpServer,
+  watchVault,
 } from "@swarmvaultai/engine";
 ```
 
-The engine also exports the main runtime types for providers, graph artifacts, pages, manifests, and lint findings.
+The engine also exports the main runtime types for providers, graph artifacts, pages, manifests, query results, lint findings, and watch records.
 
 ## Example
 
 ```ts
-import { compileVault, ingestInput, initVault, queryVault } from "@swarmvaultai/engine";
+import { compileVault, importInbox, initVault, queryVault, watchVault } from "@swarmvaultai/engine";
 
 const rootDir = process.cwd();
 
 await initVault(rootDir);
-await ingestInput(rootDir, "./research.md");
+await importInbox(rootDir);
 await compileVault(rootDir);
 
 const result = await queryVault(rootDir, "What changed most recently?", true);
 console.log(result.answer);
+
+const watcher = await watchVault(rootDir, { lint: true });
 ```
 
 ## Provider Model
 
 The engine supports:
 
+- `heuristic`
 - `openai`
-- `ollama`
 - `anthropic`
 - `gemini`
+- `ollama`
 - `openai-compatible`
 - `custom`
-- `heuristic`
 
-Providers are validated through capabilities such as:
+Providers are capability-driven. Each provider declares support for features such as:
 
 - `chat`
 - `structured`
@@ -70,29 +77,56 @@ Providers are validated through capabilities such as:
 - `streaming`
 - `local`
 
-This matters because many "OpenAI-compatible" providers implement only part of the OpenAI surface. The engine is designed to route by capability, not by brand name.
+This matters because many "OpenAI-compatible" backends only implement part of the OpenAI surface.
+
+## Main Engine Surfaces
+
+### Ingest
+
+- `ingestInput(rootDir, input)` ingests a local path or URL
+- `importInbox(rootDir, inputDir?)` recursively imports supported inbox files and browser-clipper style bundles
+
+### Compile + Query
+
+- `compileVault(rootDir)` writes wiki pages, graph data, and search state
+- `queryVault(rootDir, question, save)` answers against the compiled vault
+- `searchVault(rootDir, query, limit)` searches compiled pages directly
+
+### Automation
+
+- `watchVault(rootDir, options)` watches the inbox and appends run records to `state/jobs.ndjson`
+- `lintVault(rootDir)` runs health and anti-drift checks
+
+### MCP
+
+- `createMcpServer(rootDir)` creates an MCP server instance
+- `startMcpServer(rootDir)` runs the MCP server over stdio
+
+The MCP surface includes tools for workspace info, page search, page reads, source listing, querying, ingestion, compile, and lint, along with resources for config, graph, manifests, and page content.
 
 ## Artifacts
 
-Running the engine produces a local workspace with four main areas:
+Running the engine produces a local workspace with these main areas:
 
-- `raw/`: immutable source inputs and captured assets
+- `inbox/`: capture staging area for markdown bundles and imported files
+- `raw/sources/`: immutable source copies
+- `raw/assets/`: copied attachments referenced by ingested markdown bundles
 - `wiki/`: generated markdown pages and saved outputs
-- `state/`: manifests, extracts, graph state, compile state, and search index
-- `agent/`: generated agent rules
-
-Important artifacts include:
-
-- `state/graph.json`
-- `state/search.sqlite`
-- `wiki/index.md`
-- `wiki/sources/*.md`
-- `wiki/concepts/*.md`
-- `wiki/entities/*.md`
-- `wiki/outputs/*.md`
+- `state/manifests/`: source manifests
+- `state/extracts/`: extracted text
+- `state/analyses/`: model analysis output
+- `state/graph.json`: compiled graph
+- `state/search.sqlite`: full-text index
+- `state/jobs.ndjson`: watch-mode automation logs
 
 ## Notes
 
 - The engine expects Node `>=24`
 - The local search layer currently uses the built-in `node:sqlite` module, which may emit an experimental warning in Node 24
 - The viewer source lives in the companion `@swarmvaultai/viewer` package, and the built assets are bundled into the engine package for CLI installs
+
+## Links
+
+- Website: https://www.swarmvault.ai
+- Docs: https://www.swarmvault.ai/docs
+- GitHub: https://github.com/swarmclawai/swarmvault

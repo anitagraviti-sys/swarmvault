@@ -41,6 +41,11 @@ export async function writeJsonFile(filePath: string, value: unknown): Promise<v
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+export async function appendJsonLine(filePath: string, value: unknown): Promise<void> {
+  await ensureDir(path.dirname(filePath));
+  await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
+}
+
 export async function writeFileIfChanged(filePath: string, content: string): Promise<boolean> {
   await ensureDir(path.dirname(filePath));
   if (await fileExists(filePath)) {
@@ -105,4 +110,23 @@ export function truncate(value: string, maxLength: number): string {
     return value;
   }
   return `${value.slice(0, maxLength - 3)}...`;
+}
+
+export async function listFilesRecursive(rootDir: string): Promise<string[]> {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true }).catch(() => []);
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const absolutePath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursive(absolutePath)));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push(absolutePath);
+    }
+  }
+
+  return files;
 }

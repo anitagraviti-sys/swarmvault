@@ -24,7 +24,8 @@ const vaultConfigSchema = z.object({
     rawDir: z.string().min(1),
     wikiDir: z.string().min(1),
     stateDir: z.string().min(1),
-    agentDir: z.string().min(1)
+    agentDir: z.string().min(1),
+    inboxDir: z.string().min(1)
   }),
   providers: z.record(z.string(), providerConfigSchema),
   tasks: z.object({
@@ -45,7 +46,8 @@ export function defaultVaultConfig(): VaultConfig {
       rawDir: "raw",
       wikiDir: "wiki",
       stateDir: "state",
-      agentDir: "agent"
+      agentDir: "agent",
+      inboxDir: "inbox"
     },
     providers: {
       local: {
@@ -84,16 +86,22 @@ async function findConfigPath(rootDir: string): Promise<string> {
 export function resolvePaths(rootDir: string, config?: VaultConfig, configPath = path.join(rootDir, PRIMARY_CONFIG_FILENAME)): ResolvedPaths {
   const effective = config ?? defaultVaultConfig();
   const rawDir = path.resolve(rootDir, effective.workspace.rawDir);
+  const rawSourcesDir = path.join(rawDir, "sources");
+  const rawAssetsDir = path.join(rawDir, "assets");
   const wikiDir = path.resolve(rootDir, effective.workspace.wikiDir);
   const stateDir = path.resolve(rootDir, effective.workspace.stateDir);
   const agentDir = path.resolve(rootDir, effective.workspace.agentDir);
+  const inboxDir = path.resolve(rootDir, effective.workspace.inboxDir);
 
   return {
     rootDir,
     rawDir,
+    rawSourcesDir,
+    rawAssetsDir,
     wikiDir,
     stateDir,
     agentDir,
+    inboxDir,
     manifestsDir: path.join(stateDir, "manifests"),
     extractsDir: path.join(stateDir, "extracts"),
     analysesDir: path.join(stateDir, "analyses"),
@@ -101,6 +109,7 @@ export function resolvePaths(rootDir: string, config?: VaultConfig, configPath =
     graphPath: path.join(stateDir, "graph.json"),
     searchDbPath: path.join(stateDir, "search.sqlite"),
     compileStatePath: path.join(stateDir, "compile-state.json"),
+    jobsLogPath: path.join(stateDir, "jobs.ndjson"),
     configPath
   };
 }
@@ -125,9 +134,12 @@ export async function initWorkspace(rootDir: string): Promise<{ config: VaultCon
     ensureDir(paths.wikiDir),
     ensureDir(paths.stateDir),
     ensureDir(paths.agentDir),
+    ensureDir(paths.inboxDir),
     ensureDir(paths.manifestsDir),
     ensureDir(paths.extractsDir),
-    ensureDir(paths.analysesDir)
+    ensureDir(paths.analysesDir),
+    ensureDir(paths.rawSourcesDir),
+    ensureDir(paths.rawAssetsDir)
   ]);
 
   if (!(await fileExists(configPath))) {

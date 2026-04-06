@@ -18,7 +18,7 @@
     "type": "git",
     "url": "git+https://github.com/swarmclawai/swarmvault.git"
   },
-  "homepage": "https://swarmvault.ai",
+  "homepage": "https://www.swarmvault.ai",
   "bugs": {
     "url": "https://github.com/swarmclawai/swarmvault/issues"
   },
@@ -45,7 +45,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
+    "chokidar": "^4.0.3",
     "gray-matter": "^4.0.3",
     "jsdom": "^27.0.0",
     "mime-types": "^3.0.1",
