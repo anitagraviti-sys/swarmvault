@@ -230,8 +230,8 @@ function isNodeExported(node: ts.Node): boolean {
   );
 }
 
-function makeSymbolId(scope: string, name: string, seen: Map<string, number>): string {
-  const base = slugify(name);
+function makeSymbolId(scope: string, name: string, kind: string, seen: Map<string, number>): string {
+  const base = `${slugify(name)}.${kind}`;
   const count = (seen.get(base) ?? 0) + 1;
   seen.set(base, count);
   return `symbol:${scope}:${count === 1 ? base : `${base}-${count}`}`;
@@ -480,7 +480,7 @@ function finalizeCodeAnalysis(
   const seenSymbolIds = new Map<string, number>();
   const symbolScope = metadata?.namespace ? `ns:${slugify(metadata.namespace)}` : manifest.sourceId;
   const symbols: CodeSymbol[] = draftSymbols.map((symbol) => ({
-    id: makeSymbolId(symbolScope, symbol.name, seenSymbolIds),
+    id: makeSymbolId(symbolScope, symbol.name, symbol.kind, seenSymbolIds),
     name: symbol.name,
     kind: symbol.kind,
     signature: symbol.signature,
@@ -2078,6 +2078,98 @@ function manifestBasenameWithoutExtension(manifest: SourceManifest): string {
   return path.posix.basename(stripCodeExtension(normalizeAlias(target)));
 }
 
+type TsconfigPathsConfig = {
+  baseUrl: string;
+  paths: Record<string, string[]>;
+};
+
+async function readNearestTsconfigPaths(
+  startPath: string,
+  cache: Map<string, TsconfigPathsConfig | null>
+): Promise<TsconfigPathsConfig | undefined> {
+  let current = path.resolve(startPath);
+  try {
+    const stat = await fs.stat(current);
+    if (!stat.isDirectory()) {
+      current = path.dirname(current);
+    }
+  } catch {
+    current = path.dirname(current);
+  }
+
+  while (true) {
+    if (cache.has(current)) {
+      const cached = cache.get(current);
+      return cached === null ? undefined : cached;
+    }
+    const tsconfigPath = path.join(current, "tsconfig.json");
+    const exists = await fs
+      .access(tsconfigPath)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      const configFile = ts.readConfigFile(tsconfigPath, (p) => ts.sys.readFile(p));
+      if (!configFile.error && configFile.config) {
+        const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, current);
+        const rawPaths = parsed.options.paths;
+        if (rawPaths && Object.keys(rawPaths).length > 0) {
+          const baseUrl = parsed.options.baseUrl ? toPosix(path.relative(current, parsed.options.baseUrl)) : ".";
+          const config: TsconfigPathsConfig = { baseUrl, paths: rawPaths };
+          cache.set(current, config);
+          return config;
+        }
+      }
+      cache.set(current, null);
+      return undefined;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      cache.set(current, null);
+      return undefined;
+    }
+    current = parent;
+  }
+}
+
+function tsconfigPathAliasesForFile(repoRelativePath: string, config: TsconfigPathsConfig): string[] {
+  const aliases: string[] = [];
+  const stripped = stripCodeExtension(normalizeAlias(repoRelativePath));
+  const indexStripped = stripped.endsWith("/index") ? stripped.slice(0, -"/index".length) : undefined;
+
+  for (const [pattern, targets] of Object.entries(config.paths)) {
+    for (const target of targets) {
+      if (pattern.includes("*") && target.includes("*")) {
+        const targetPrefix = normalizeAlias(
+          config.baseUrl === "." ? target.replace("*", "") : path.posix.join(config.baseUrl, target.replace("*", ""))
+        );
+        const patternBase = pattern.replace("*", "");
+        for (const candidate of [stripped, indexStripped]) {
+          if (candidate && candidate.startsWith(targetPrefix)) {
+            aliases.push(patternBase + candidate.slice(targetPrefix.length));
+          }
+        }
+      } else if (!pattern.includes("*") && !target.includes("*")) {
+        const targetNorm = normalizeAlias(config.baseUrl === "." ? target : path.posix.join(config.baseUrl, target));
+        if (stripped === stripCodeExtension(targetNorm) || indexStripped === stripCodeExtension(targetNorm)) {
+          aliases.push(pattern);
+        }
+      }
+    }
+  }
+
+  if (config.baseUrl !== ".") {
+    const basePrefix = normalizeAlias(config.baseUrl) + "/";
+    if (stripped.startsWith(basePrefix)) {
+      aliases.push(stripped.slice(basePrefix.length));
+    }
+    if (indexStripped && indexStripped.startsWith(basePrefix)) {
+      aliases.push(indexStripped.slice(basePrefix.length));
+    }
+  }
+
+  return aliases;
+}
+
 type DartPackageInfo = {
   rootDir: string;
   name: string;
@@ -2295,6 +2387,7 @@ export async function buildCodeIndex(rootDir: string, manifests: SourceManifest[
   const analysesBySourceId = new Map(analyses.map((analysis) => [analysis.sourceId, analysis]));
   const goModuleCache = new Map<string, string | null>();
   const dartPackageCache = new Map<string, DartPackageInfo | null>();
+  const tsconfigCache = new Map<string, TsconfigPathsConfig | null>();
   const entries: CodeIndexEntry[] = [];
 
   for (const manifest of manifests) {
@@ -2320,6 +2413,20 @@ export async function buildCodeIndex(rootDir: string, manifests: SourceManifest[
     recordAlias(aliases, normalizedNamespace);
 
     switch (analysis.code.language) {
+      case "javascript":
+      case "jsx":
+      case "typescript":
+      case "tsx": {
+        if (repoRelativePath && manifest.originalPath) {
+          const tsconfigPaths = await readNearestTsconfigPaths(manifest.originalPath, tsconfigCache);
+          if (tsconfigPaths) {
+            for (const alias of tsconfigPathAliasesForFile(repoRelativePath, tsconfigPaths)) {
+              recordAlias(aliases, alias);
+            }
+          }
+        }
+        break;
+      }
       case "python":
         recordAlias(aliases, normalizedModuleName?.replace(/\//g, "."));
         break;

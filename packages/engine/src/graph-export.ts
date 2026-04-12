@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import matter from "gray-matter";
 import { loadVaultConfig } from "./config.js";
@@ -16,6 +18,16 @@ import {
 import { renderGraphReportHtml } from "./graph-report-html.js";
 import type { GraphArtifact, GraphExportFormat, GraphExportResult, GraphNode, GraphPage, GraphReportArtifact } from "./types.js";
 import { ensureDir, fileExists, readJsonFile, slugify } from "./utils.js";
+
+let _visNetworkJs: string | undefined;
+function loadVisNetworkJs(): string {
+  if (!_visNetworkJs) {
+    const require = createRequire(import.meta.url);
+    const pkgDir = path.dirname(require.resolve("vis-network/package.json"));
+    _visNetworkJs = readFileSync(path.join(pkgDir, "standalone/umd/vis-network.min.js"), "utf8");
+  }
+  return _visNetworkJs;
+}
 
 const NODE_COLORS: Record<string, string> = {
   source: "#f59e0b",
@@ -474,7 +486,7 @@ function renderHtmlStandalone(graph: GraphArtifact): string {
 <head>
   <meta charset="utf-8">
   <title>SwarmVault Graph</title>
-  <script src="https://unpkg.com/vis-network@9/standalone/umd/vis-network.min.js"></script>
+  <script>${loadVisNetworkJs()}</script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; display: flex; height: 100vh; background: #0f172a; color: #e2e8f0; }

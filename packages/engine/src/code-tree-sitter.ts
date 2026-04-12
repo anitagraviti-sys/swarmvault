@@ -229,8 +229,8 @@ function singleLineSignature(value: string): string {
   );
 }
 
-function makeSymbolId(sourceId: string, name: string, seen: Map<string, number>): string {
-  const base = slugify(name);
+function makeSymbolId(sourceId: string, name: string, kind: string, seen: Map<string, number>): string {
+  const base = `${slugify(name)}.${kind}`;
   const count = (seen.get(base) ?? 0) + 1;
   seen.set(base, count);
   return `symbol:${sourceId}:${count === 1 ? base : `${base}-${count}`}`;
@@ -339,7 +339,7 @@ function finalizeCodeAnalysis(
 
   const seenSymbolIds = new Map<string, number>();
   const symbols: CodeSymbol[] = draftSymbols.map((symbol) => ({
-    id: makeSymbolId(manifest.sourceId, symbol.name, seenSymbolIds),
+    id: makeSymbolId(manifest.sourceId, symbol.name, symbol.kind, seenSymbolIds),
     name: symbol.name,
     kind: symbol.kind,
     signature: symbol.signature,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.27
+
+- Made `graph export --html-standalone` fully offline by bundling vis-network inline instead of loading it from a CDN, so exported HTML files work without internet access
+- Added TypeScript `tsconfig.json` path alias resolution so import edges from specifiers like `@/components/Button` or `@utils/format` now resolve correctly during code index construction
+- Improved symbol ID stability across recompilations by including the symbol kind (function, class, interface, etc.) in the generated ID, reducing spurious ID churn when a file contains same-named symbols of different kinds
+
 ## 0.7.26
 
 - Added first-class audio ingest with provider-backed transcription through `tasks.audioProvider`, plus native YouTube URL transcript capture that writes extracted text and metadata into the normal source, extract, compile, and search pipeline

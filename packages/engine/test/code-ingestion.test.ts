@@ -2199,4 +2199,58 @@ describe("code-aware ingestion", () => {
     await expect(fs.access(path.join(rootDir, "state", "manifests", `${droppedManifest?.sourceId}.json`))).rejects.toThrow();
     await expect(fs.access(path.join(rootDir, "wiki", "code", `${droppedManifest?.sourceId}.md`))).rejects.toThrow();
   });
+
+  it("resolves TypeScript path aliases from tsconfig.json into import edges", async () => {
+    const rootDir = await createTempWorkspace();
+    await initVault(rootDir);
+
+    const repoDir = path.join(rootDir, "repo");
+    await fs.mkdir(path.join(repoDir, "src", "utils"), { recursive: true });
+    await fs.mkdir(path.join(repoDir, "src", "components"), { recursive: true });
+
+    await fs.writeFile(
+      path.join(repoDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@/*": ["src/*"],
+            "@utils/*": ["src/utils/*"]
+          }
+        }
+      }),
+      "utf8"
+    );
+
+    await fs.writeFile(
+      path.join(repoDir, "src", "utils", "format.ts"),
+      ["export function formatName(name: string): string {", `  return \`Name: \${name}\`;`, "}"].join("\n"),
+      "utf8"
+    );
+
+    await fs.writeFile(
+      path.join(repoDir, "src", "components", "widget.ts"),
+      [
+        "import { formatName } from '@utils/format';",
+        "",
+        "export function render(name: string): string {",
+        "  return formatName(name);",
+        "}"
+      ].join("\n"),
+      "utf8"
+    );
+
+    await ingestDirectory(rootDir, repoDir);
+    await compileVault(rootDir);
+
+    const graph = JSON.parse(await fs.readFile(path.join(rootDir, "state", "graph.json"), "utf8")) as GraphArtifact;
+    const codeIndex = JSON.parse(await fs.readFile(path.join(rootDir, "state", "code-index.json"), "utf8")) as CodeIndexArtifact;
+
+    const formatEntry = codeIndex.entries.find((entry) => entry.repoRelativePath?.endsWith("utils/format.ts"));
+    expect(formatEntry).toBeTruthy();
+    expect(formatEntry!.aliases).toEqual(expect.arrayContaining(["@utils/format", "@/utils/format"]));
+
+    const importEdge = graph.edges.find((edge) => edge.relation === "imports" && edge.target === `module:${formatEntry!.sourceId}`);
+    expect(importEdge).toBeTruthy();
+  });
 });
