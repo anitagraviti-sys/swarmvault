@@ -12,6 +12,7 @@ wiki/
 state/
 agent/
 tmp/
+docs/superpowers/
 packages/viewer/dist/
 .live-smoke-artifacts/
 .oss-corpus-artifacts/
