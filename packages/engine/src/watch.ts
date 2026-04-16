@@ -1,10 +1,11 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import chokidar from "chokidar";
-import { initWorkspace } from "./config.js";
+import { initWorkspace, loadVaultConfig } from "./config.js";
 import { importInbox, listTrackedRepoRoots, syncTrackedReposForWatch } from "./ingest.js";
 import { appendWatchRun, recordSession } from "./logs.js";
-import type { WatchController, WatchOptions, WatchStatusResult } from "./types.js";
+import type { VaultConfig, WatchConfig, WatchController, WatchOptions, WatchStatusResult } from "./types.js";
 import { isPathWithin } from "./utils.js";
 import { compileVault, lintVault } from "./vault.js";
 import {
@@ -142,11 +143,127 @@ async function resolveWatchTargets(
 ): Promise<string[]> {
   const targets = new Set<string>([path.resolve(paths.inboxDir)]);
   if (options.repo) {
-    for (const repoRoot of await listTrackedRepoRoots(rootDir)) {
+    for (const repoRoot of await resolveWatchedRepoRoots(rootDir, { overrideRoots: options.overrideRoots })) {
       targets.add(path.resolve(repoRoot));
     }
   }
   return [...targets].sort((left, right) => left.localeCompare(right));
+}
+
+function resolveRootRelative(rootDir: string, candidate: string): string {
+  return path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(rootDir, candidate);
+}
+
+/**
+ * Compute the effective list of repository roots that `swarmvault watch --repo` should track.
+ * Resolution order (highest wins):
+ *   1. `options.overrideRoots` (CLI `--root <path>`) — used verbatim, config and discovery skipped.
+ *   2. Explicit `config.watch.repoRoots` — skips auto-discovery but still honors `excludeRepoRoots`.
+ *   3. Auto-discovery via `listTrackedRepoRoots` — preserves pre-0.11 behavior.
+ * `config.watch.excludeRepoRoots` always applies as a deny list (unless `overrideRoots` is set).
+ */
+export async function resolveWatchedRepoRoots(
+  rootDir: string,
+  options: { overrideRoots?: string[]; config?: VaultConfig } = {}
+): Promise<string[]> {
+  const override = options.overrideRoots?.filter(Boolean) ?? [];
+  if (override.length > 0) {
+    return dedupeSorted(override.map((candidate) => resolveRootRelative(rootDir, candidate)));
+  }
+  const config = options.config ?? (await loadVaultConfig(rootDir).catch(() => null))?.config;
+  const watchConfig: WatchConfig = config?.watch ?? {};
+  const explicit = watchConfig.repoRoots?.filter(Boolean) ?? [];
+  const baseRoots =
+    explicit.length > 0 ? explicit.map((candidate) => resolveRootRelative(rootDir, candidate)) : await listTrackedRepoRoots(rootDir);
+  const excluded = new Set(
+    (watchConfig.excludeRepoRoots ?? []).filter(Boolean).map((candidate) => resolveRootRelative(rootDir, candidate))
+  );
+  return dedupeSorted(baseRoots.filter((candidate) => !excluded.has(path.resolve(candidate))));
+}
+
+/**
+ * Public helper mirroring `resolveWatchedRepoRoots` for CLI and MCP callers that only need the
+ * final list without the full watch cycle machinery.
+ */
+export async function listWatchedRoots(rootDir: string, options: { overrideRoots?: string[] } = {}): Promise<string[]> {
+  return resolveWatchedRepoRoots(rootDir, options);
+}
+
+function dedupeSorted(values: string[]): string[] {
+  return [...new Set(values.map((value) => path.resolve(value)))].sort((left, right) => left.localeCompare(right));
+}
+
+async function readConfigJson(rootDir: string): Promise<{ path: string; content: Record<string, unknown> }> {
+  const configPath = path.join(rootDir, "swarmvault.config.json");
+  const raw = await fs.readFile(configPath, "utf8");
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("swarmvault.config.json must contain a JSON object.");
+  }
+  return { path: configPath, content: parsed as Record<string, unknown> };
+}
+
+async function writeConfigJson(configPath: string, content: Record<string, unknown>): Promise<void> {
+  await fs.writeFile(configPath, `${JSON.stringify(content, null, 2)}\n`, "utf8");
+}
+
+function getWatchBlock(config: Record<string, unknown>): Record<string, unknown> {
+  const block = config.watch;
+  if (block && typeof block === "object" && !Array.isArray(block)) {
+    return block as Record<string, unknown>;
+  }
+  return {};
+}
+
+/**
+ * Add a repo root to the persisted `watch.repoRoots` list in `swarmvault.config.json`.
+ * Returns the resolved absolute path that was added (or already present). Dedupes on resolved path.
+ */
+export async function addWatchedRoot(rootDir: string, candidate: string): Promise<string> {
+  const resolved = resolveRootRelative(rootDir, candidate);
+  const { path: configPath, content } = await readConfigJson(rootDir);
+  const watchBlock = getWatchBlock(content);
+  const current = Array.isArray(watchBlock.repoRoots)
+    ? (watchBlock.repoRoots as string[]).filter((value) => typeof value === "string")
+    : [];
+  const resolvedSet = new Set(current.map((value) => resolveRootRelative(rootDir, value)));
+  if (!resolvedSet.has(resolved)) {
+    current.push(resolved);
+  }
+  watchBlock.repoRoots = [...new Set(current.map((value) => resolveRootRelative(rootDir, value)))].sort((left, right) =>
+    left.localeCompare(right)
+  );
+  content.watch = watchBlock;
+  await writeConfigJson(configPath, content);
+  return resolved;
+}
+
+/**
+ * Remove a repo root from the persisted `watch.repoRoots` list. Missing path is a no-op.
+ * Returns `true` when the path was removed, `false` when it was absent.
+ */
+export async function removeWatchedRoot(rootDir: string, candidate: string): Promise<boolean> {
+  const resolved = resolveRootRelative(rootDir, candidate);
+  const { path: configPath, content } = await readConfigJson(rootDir);
+  const watchBlock = getWatchBlock(content);
+  const current = Array.isArray(watchBlock.repoRoots)
+    ? (watchBlock.repoRoots as string[]).filter((value) => typeof value === "string")
+    : [];
+  const filtered = current.filter((value) => resolveRootRelative(rootDir, value) !== resolved);
+  const removed = filtered.length !== current.length;
+  if (filtered.length > 0) {
+    watchBlock.repoRoots = filtered;
+    content.watch = watchBlock;
+  } else if ("repoRoots" in watchBlock) {
+    delete watchBlock.repoRoots;
+    if (Object.keys(watchBlock).length === 0) {
+      delete content.watch;
+    } else {
+      content.watch = watchBlock;
+    }
+  }
+  await writeConfigJson(configPath, content);
+  return removed;
 }
 
 async function performWatchCycle(
@@ -156,7 +273,8 @@ async function performWatchCycle(
   codeOnly = false
 ): Promise<WatchCycleResult> {
   const imported = await importInbox(rootDir, paths.inboxDir);
-  const repoSync = options.repo ? await syncTrackedReposForWatch(rootDir) : null;
+  const repoRoots = options.repo ? await resolveWatchedRepoRoots(rootDir, { overrideRoots: options.overrideRoots }) : undefined;
+  const repoSync = options.repo ? await syncTrackedReposForWatch(rootDir, undefined, repoRoots) : null;
   const compile = await compileVault(rootDir, { codeOnly });
   const pendingSemanticRefresh = repoSync
     ? await mergePendingSemanticRefresh(rootDir, repoSync.pendingSemanticRefresh)
@@ -564,7 +682,7 @@ export async function watchVault(rootDir: string, options: WatchOptions = {}): P
 
 export async function getWatchStatus(rootDir: string): Promise<WatchStatusResult> {
   const persisted = await readWatchStatusArtifact(rootDir);
-  const watchedRepoRoots = await listTrackedRepoRoots(rootDir);
+  const watchedRepoRoots = await resolveWatchedRepoRoots(rootDir);
   const pendingSemanticRefresh = await readPendingSemanticRefresh(rootDir);
   return {
     generatedAt: new Date().toISOString(),

@@ -302,6 +302,12 @@ const vaultConfigSchema = z.object({
         })
         .optional()
     })
+    .optional(),
+  watch: z
+    .object({
+      repoRoots: z.array(z.string().min(1)).optional(),
+      excludeRepoRoots: z.array(z.string().min(1)).optional()
+    })
     .optional()
 });
 

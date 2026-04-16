@@ -84,5 +84,13 @@ export {
   stageGeneratedOutputPages
 } from "./vault.js";
 export { exportGraphHtml, startGraphServer } from "./viewer.js";
-export { getWatchStatus, runWatchCycle, watchVault } from "./watch.js";
+export {
+  addWatchedRoot,
+  getWatchStatus,
+  listWatchedRoots,
+  removeWatchedRoot,
+  resolveWatchedRepoRoots,
+  runWatchCycle,
+  watchVault
+} from "./watch.js";
 export { createWebSearchAdapter, getWebSearchAdapterForTask } from "./web-search/registry.js";

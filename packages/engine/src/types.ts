@@ -333,6 +333,16 @@ export interface VaultConfig {
   redaction?: RedactionSettings;
   freshness?: FreshnessConfig;
   consolidation?: ConsolidationConfig;
+  watch?: WatchConfig;
+}
+
+/**
+ * Explicit user control over which repository roots `swarmvault watch --repo` tracks.
+ * Absent config preserves the existing auto-discovery behavior over managed sources and manifests.
+ */
+export interface WatchConfig {
+  repoRoots?: string[];
+  excludeRepoRoots?: string[];
 }
 
 /**
@@ -1187,6 +1197,7 @@ export interface WatchOptions {
   debounceMs?: number;
   repo?: boolean;
   codeOnly?: boolean;
+  overrideRoots?: string[];
 }
 
 export interface PendingSemanticRefreshEntry {

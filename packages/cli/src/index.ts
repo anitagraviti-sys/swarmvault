@@ -8,6 +8,7 @@ import {
   acceptApproval,
   addInput,
   addManagedSource,
+  addWatchedRoot,
   archiveCandidate,
   autoCommitWikiChanges,
   benchmarkVault,
@@ -41,6 +42,7 @@ import {
   listManagedSourceRecords,
   listManifests,
   listSchedules,
+  listWatchedRoots,
   loadVaultConfig,
   pathGraphVault,
   previewCandidatePromotions,
@@ -51,6 +53,7 @@ import {
   readApproval,
   rejectApproval,
   reloadManagedSources,
+  removeWatchedRoot,
   resumeSourceSession,
   reviewManagedSource,
   reviewSourceScope,
@@ -90,6 +93,10 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function collectRepeated(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }
 
 function sourceScopeFromManifests(
@@ -1355,14 +1362,17 @@ const watch = program
   .option("--once", "Run one import/refresh cycle immediately instead of starting a watcher", false)
   .option("--code-only", "Only re-extract code sources (AST-only, no LLM re-analysis)", false)
   .option("--debounce <ms>", "Debounce window in milliseconds", "900")
-  .action(async (options: { lint?: boolean; repo?: boolean; once?: boolean; codeOnly?: boolean; debounce?: string }) => {
+  .option("--root <path>", "Watch this repo root instead of config/auto-discovery (repeat for multiple)", collectRepeated, [] as string[])
+  .action(async (options: { lint?: boolean; repo?: boolean; once?: boolean; codeOnly?: boolean; debounce?: string; root?: string[] }) => {
     const debounceMs = parsePositiveInt(options.debounce, 900);
+    const overrideRoots = options.root && options.root.length > 0 ? options.root : undefined;
     if (options.once) {
       const result = await runWatchCycle(process.cwd(), {
         lint: options.lint ?? false,
         repo: options.repo ?? false,
         codeOnly: options.codeOnly ?? false,
-        debounceMs
+        debounceMs,
+        overrideRoots
       });
       if (isJson()) {
         emitJson(result);
@@ -1378,7 +1388,8 @@ const watch = program
       lint: options.lint ?? false,
       repo: options.repo ?? false,
       codeOnly: options.codeOnly ?? false,
-      debounceMs
+      debounceMs,
+      overrideRoots
     });
     if (isJson()) {
       emitJson({ status: "watching", inboxDir: paths.inboxDir, repo: options.repo ?? false });
@@ -1391,6 +1402,48 @@ const watch = program
       } catch {}
       process.exit(0);
     });
+  });
+
+watch
+  .command("list-roots")
+  .description("Print the effective watched repo roots resolved from config and auto-discovery.")
+  .action(async () => {
+    const roots = await listWatchedRoots(process.cwd());
+    if (isJson()) {
+      emitJson({ roots });
+      return;
+    }
+    if (roots.length === 0) {
+      log("No watched repo roots.");
+      return;
+    }
+    for (const entry of roots) {
+      log(entry);
+    }
+  });
+
+watch
+  .command("add-root <path>")
+  .description("Persist a repo root into swarmvault.config.json watch.repoRoots.")
+  .action(async (pathValue: string) => {
+    const resolved = await addWatchedRoot(process.cwd(), pathValue);
+    if (isJson()) {
+      emitJson({ added: resolved });
+      return;
+    }
+    log(`Watching ${resolved}`);
+  });
+
+watch
+  .command("remove-root <path>")
+  .description("Remove a repo root from swarmvault.config.json watch.repoRoots.")
+  .action(async (pathValue: string) => {
+    const removed = await removeWatchedRoot(process.cwd(), pathValue);
+    if (isJson()) {
+      emitJson({ removed });
+      return;
+    }
+    log(removed ? `Removed ${pathValue}` : `${pathValue} was not in watch.repoRoots.`);
   });
 
 async function showWatchStatus(): Promise<void> {
