@@ -4,6 +4,7 @@ export { installAgent, installConfiguredAgents } from "./agents.js";
 export { autoCommitWikiChanges } from "./auto-commit.js";
 export { DEFAULT_PROMOTION_CONFIG, evaluateCandidateForPromotion } from "./candidate-promotion.js";
 export { defaultVaultConfig, defaultVaultSchema, initWorkspace, loadVaultConfig, resolvePaths } from "./config.js";
+export { DEFAULT_CONSOLIDATION_CONFIG, resolveConsolidationConfig, runConsolidation } from "./consolidate.js";
 export {
   applyDecayToPages,
   computeDecayScore,
@@ -57,6 +58,7 @@ export {
   blastRadiusVault,
   bootstrapDemo,
   compileVault,
+  consolidateVault,
   createSupersessionEdge,
   explainGraphVault,
   exploreVault,

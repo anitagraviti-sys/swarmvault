@@ -12,6 +12,7 @@ import type {
   GraphNode,
   GraphPage,
   GraphReportArtifact,
+  MemoryTier,
   OutputAsset,
   OutputFormat,
   OutputOrigin,
@@ -65,6 +66,34 @@ export function decayFrontmatterFragment(decay?: DecayFrontmatter): Record<strin
   }
   if (typeof decay.supersededBy === "string" && decay.supersededBy) {
     fragment.superseded_by = decay.supersededBy;
+  }
+  return fragment;
+}
+
+export interface TierFrontmatter {
+  tier?: MemoryTier;
+  consolidatedFromPageIds?: string[];
+  consolidationConfidence?: number;
+}
+
+/**
+ * Emit the consolidation-tier fragment of an insight page's frontmatter.
+ * Fields are only included when set so pages that never participated in
+ * consolidation stay byte-stable on disk.
+ */
+export function tierFrontmatterFragment(tier?: TierFrontmatter): Record<string, unknown> {
+  if (!tier) {
+    return {};
+  }
+  const fragment: Record<string, unknown> = {};
+  if (tier.tier === "working" || tier.tier === "episodic" || tier.tier === "semantic" || tier.tier === "procedural") {
+    fragment.tier = tier.tier;
+  }
+  if (Array.isArray(tier.consolidatedFromPageIds) && tier.consolidatedFromPageIds.length > 0) {
+    fragment.consolidated_from_page_ids = [...tier.consolidatedFromPageIds];
+  }
+  if (typeof tier.consolidationConfidence === "number" && Number.isFinite(tier.consolidationConfidence)) {
+    fragment.consolidation_confidence = Math.max(0, Math.min(1, tier.consolidationConfidence));
   }
   return fragment;
 }

@@ -13,6 +13,7 @@ import {
   benchmarkVault,
   blastRadiusVault,
   compileVault,
+  consolidateVault,
   createSupersessionEdge,
   deleteManagedSource,
   explainGraphVault,
@@ -784,6 +785,24 @@ program
   });
 
 program
+  .command("consolidate")
+  .description("Roll working-tier insights up into episodic, semantic, and procedural tiers.")
+  .option("--dry-run", "Return decisions without writing any files", false)
+  .action(async (options: { dryRun?: boolean }) => {
+    const result = await consolidateVault(process.cwd(), { dryRun: options.dryRun ?? false });
+    if (isJson()) {
+      emitJson(result);
+      return;
+    }
+    log(
+      `${options.dryRun ? "Would consolidate" : "Consolidated"} ${result.newPages.length} new tier page(s); ${result.promoted.length} promotion(s).`
+    );
+    for (const decision of result.decisions) {
+      log(decision);
+    }
+  });
+
+program
   .command("query")
   .description("Query the compiled SwarmVault wiki.")
   .argument("<question>", "Question to ask SwarmVault")
@@ -884,14 +903,16 @@ program
   .option("--web", "Augment deep lint with configured web search", false)
   .option("--conflicts", "Filter to contradiction findings only", false)
   .option("--decay", "Filter to decay-related findings only", false)
-  .action(async (options: { deep?: boolean; web?: boolean; conflicts?: boolean; decay?: boolean }) => {
+  .option("--tiers", "Filter to consolidation-tier findings only", false)
+  .action(async (options: { deep?: boolean; web?: boolean; conflicts?: boolean; decay?: boolean; tiers?: boolean }) => {
     const lintConfig = await loadVaultConfig(process.cwd()).catch(() => null);
-    const deepEnabled = options.decay ? false : (options.deep ?? lintConfig?.config.profile.deepLintDefault ?? false);
+    const deepEnabled = options.decay || options.tiers ? false : (options.deep ?? lintConfig?.config.profile.deepLintDefault ?? false);
     const findings = await lintVault(process.cwd(), {
       deep: deepEnabled,
       web: options.web ?? false,
       conflicts: options.conflicts ?? false,
-      decay: options.decay ?? false
+      decay: options.decay ?? false,
+      tiers: options.tiers ?? false
     });
     if (isJson()) {
       emitJson(findings);

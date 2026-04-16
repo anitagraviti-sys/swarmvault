@@ -15,7 +15,8 @@ type SessionOperation =
   | "candidate"
   | "schedule"
   | "orchestration"
-  | "supersede";
+  | "supersede"
+  | "consolidate";
 
 export interface SessionRecordInput {
   operation: SessionOperation;

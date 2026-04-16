@@ -75,6 +75,10 @@ const scheduledTaskSchema = z.discriminatedUnion("type", [
     question: z.string().min(1),
     steps: z.number().int().positive().optional(),
     format: z.enum(["markdown", "report", "slides", "chart", "image"]).optional()
+  }),
+  z.object({
+    type: z.literal("consolidate"),
+    dryRun: z.boolean().optional()
   })
 ]);
 
@@ -273,6 +277,28 @@ const vaultConfigSchema = z.object({
           third_party: z.number().positive().optional(),
           resource: z.number().positive().optional(),
           generated: z.number().positive().optional()
+        })
+        .optional()
+    })
+    .optional(),
+  consolidation: z
+    .object({
+      enabled: z.boolean().optional(),
+      workingToEpisodic: z
+        .object({
+          minPages: z.number().int().min(1).optional(),
+          sessionWindowHours: z.number().positive().optional(),
+          minSharedNodeRatio: z.number().min(0).max(1).optional()
+        })
+        .optional(),
+      episodicToSemantic: z
+        .object({
+          minOccurrences: z.number().int().min(1).optional()
+        })
+        .optional(),
+      semanticToProcedural: z
+        .object({
+          minWorkflowSteps: z.number().int().min(1).optional()
         })
         .optional()
     })

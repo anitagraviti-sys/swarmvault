@@ -3,6 +3,7 @@ import path from "node:path";
 import matter from "gray-matter";
 import type {
   GraphPage,
+  MemoryTier,
   OutputAsset,
   OutputFormat,
   OutputOrigin,
@@ -193,6 +194,17 @@ function normalizeSupersededBy(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+export function normalizeMemoryTier(value: unknown): MemoryTier | undefined {
+  return value === "working" || value === "episodic" || value === "semantic" || value === "procedural" ? value : undefined;
+}
+
+function normalizeConsolidationConfidence(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
 export function parseStoredPage(
   relativePath: string,
   content: string,
@@ -247,7 +259,10 @@ export function parseStoredPage(
     origin: typeof parsed.data.origin === "string" ? (parsed.data.origin as OutputOrigin) : undefined,
     question: typeof parsed.data.question === "string" ? parsed.data.question : undefined,
     outputFormat: kind === "output" ? normalizeOutputFormat(parsed.data.output_format) : undefined,
-    outputAssets: kind === "output" ? outputAssets : []
+    outputAssets: kind === "output" ? outputAssets : [],
+    tier: kind === "insight" ? (normalizeMemoryTier(parsed.data.tier) ?? "working") : undefined,
+    consolidatedFromPageIds: kind === "insight" ? normalizeStringArray(parsed.data.consolidated_from_page_ids) : undefined,
+    consolidationConfidence: kind === "insight" ? normalizeConsolidationConfidence(parsed.data.consolidation_confidence) : undefined
   };
 }
 
@@ -310,7 +325,10 @@ export async function loadInsightPages(wikiDir: string): Promise<StoredPage[]> {
         managedBy: normalizePageManager(parsed.data.managed_by, "human"),
         origin: typeof parsed.data.origin === "string" ? (parsed.data.origin as OutputOrigin) : undefined,
         question: typeof parsed.data.question === "string" ? parsed.data.question : undefined,
-        outputAssets: normalizeOutputAssets(parsed.data.output_assets)
+        outputAssets: normalizeOutputAssets(parsed.data.output_assets),
+        tier: normalizeMemoryTier(parsed.data.tier) ?? "working",
+        consolidatedFromPageIds: normalizeStringArray(parsed.data.consolidated_from_page_ids),
+        consolidationConfidence: normalizeConsolidationConfidence(parsed.data.consolidation_confidence)
       },
       content,
       contentHash: sha256(content)

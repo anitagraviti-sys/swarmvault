@@ -53,6 +53,17 @@ export type AgentType = z.infer<typeof agentTypeSchema>;
 
 export type PageKind = "index" | "source" | "module" | "concept" | "entity" | "output" | "insight" | "graph_report" | "community_summary";
 export type Freshness = "fresh" | "stale";
+/**
+ * Consolidation tier for insight pages (LLM Wiki v2 memory model).
+ *  - `working`: raw recent observations from ad-hoc query/explore output.
+ *  - `episodic`: session-scoped digest rolled up from multiple working pages.
+ *  - `semantic`: cross-session durable facts repeated across episodic pages.
+ *  - `procedural`: how-to workflows inferred from repeated sequences.
+ * Non-insight pages (sources, modules, concepts, entities, outputs) leave
+ * `tier` undefined. Pages without a `tier` field default to `working` when
+ * loaded so 0.9.0 vaults require no migration.
+ */
+export type MemoryTier = "working" | "episodic" | "semantic" | "procedural";
 export type ClaimStatus = "extracted" | "inferred" | "conflicted" | "stale";
 export type EvidenceClass = "extracted" | "inferred" | "ambiguous";
 export type Polarity = "positive" | "negative" | "neutral";
@@ -321,6 +332,43 @@ export interface VaultConfig {
   };
   redaction?: RedactionSettings;
   freshness?: FreshnessConfig;
+  consolidation?: ConsolidationConfig;
+}
+
+/**
+ * Heuristic configuration for the LLM Wiki v2 consolidation tier rollup.
+ *
+ * Defaults are baked in so 0.9.0 configs keep working without migration:
+ *   - enabled: true
+ *   - workingToEpisodic: { minPages: 3, sessionWindowHours: 24, minSharedNodeRatio: 0.3 }
+ *   - episodicToSemantic: { minOccurrences: 3 }
+ *   - semanticToProcedural: { minWorkflowSteps: 3 }
+ */
+export interface ConsolidationConfig {
+  enabled?: boolean;
+  workingToEpisodic?: {
+    minPages?: number;
+    sessionWindowHours?: number;
+    minSharedNodeRatio?: number;
+  };
+  episodicToSemantic?: {
+    minOccurrences?: number;
+  };
+  semanticToProcedural?: {
+    minWorkflowSteps?: number;
+  };
+}
+
+export interface ConsolidationPromotion {
+  pageId: string;
+  fromTier: MemoryTier;
+  toTier: MemoryTier;
+}
+
+export interface ConsolidationResult {
+  promoted: ConsolidationPromotion[];
+  newPages: GraphPage[];
+  decisions: string[];
 }
 
 export interface FreshnessConfig {
@@ -834,6 +882,24 @@ export interface GraphPage {
   question?: string;
   outputFormat?: OutputFormat;
   outputAssets?: OutputAsset[];
+  /**
+   * Memory-tier assignment for insight pages. Undefined on non-insight
+   * pages. When an insight page on disk is missing this field, callers
+   * default it to `"working"` in memory; no on-disk migration happens.
+   */
+  tier?: MemoryTier;
+  /**
+   * Lower-tier page ids that were rolled up into this page during a
+   * consolidation pass. Populated only on pages produced by
+   * `runConsolidation` (episodic/semantic/procedural). Empty/undefined on
+   * working-tier or non-insight pages.
+   */
+  consolidatedFromPageIds?: string[];
+  /**
+   * Heuristic confidence (0..1) that the consolidation rollup is
+   * meaningful. Missing when the page was not produced by consolidation.
+   */
+  consolidationConfidence?: number;
 }
 
 export interface GraphArtifact {
@@ -1321,6 +1387,12 @@ export interface LintOptions {
    * (`decayed-pages`, `broken_supersession`, `inconsistent_decay`).
    */
   decay?: boolean;
+  /**
+   * When true, only consolidation-tier lint rules run
+   * (`stale_working_tier`, `broken_consolidation_basis`,
+   * `semantic_without_episodic_basis`).
+   */
+  tiers?: boolean;
 }
 
 export interface ExploreOptions {
@@ -1648,7 +1720,17 @@ export interface ScheduledExploreTask {
   format?: OutputFormat;
 }
 
-export type ScheduledTaskConfig = ScheduledCompileTask | ScheduledLintTask | ScheduledQueryTask | ScheduledExploreTask;
+export interface ScheduledConsolidateTask {
+  type: "consolidate";
+  dryRun?: boolean;
+}
+
+export type ScheduledTaskConfig =
+  | ScheduledCompileTask
+  | ScheduledLintTask
+  | ScheduledQueryTask
+  | ScheduledExploreTask
+  | ScheduledConsolidateTask;
 
 export interface ScheduleTriggerConfig {
   cron?: string;

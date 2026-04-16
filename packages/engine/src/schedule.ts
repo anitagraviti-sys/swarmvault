@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadVaultConfig } from "./config.js";
+import { runConsolidation } from "./consolidate.js";
 import { recordSession } from "./logs.js";
 import type { ScheduleController, ScheduledRunResult, ScheduleStateRecord, ScheduleTriggerConfig } from "./types.js";
 import { appendJsonLine, ensureDir, readJsonFile, writeJsonFile } from "./utils.js";
@@ -200,6 +201,8 @@ export async function runSchedule(rootDir: string, jobId: string): Promise<Sched
         review: true
       });
       approvalId = result.approvalId;
+    } else if (job.task.type === "consolidate") {
+      await runConsolidation(rootDir, config.consolidation ?? {}, undefined, { dryRun: job.task.dryRun ?? false });
     }
   } catch (caught) {
     success = false;

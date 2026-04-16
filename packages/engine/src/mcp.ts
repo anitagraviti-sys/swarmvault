@@ -14,6 +14,7 @@ import {
   archiveCandidate,
   blastRadiusVault,
   compileVault,
+  consolidateVault,
   explainGraphVault,
   getWorkspaceInfo,
   lintVault,
@@ -378,6 +379,21 @@ export async function createMcpServer(rootDir: string): Promise<McpServer> {
     safeHandler(async () => {
       const status = await getWatchStatus(rootDir);
       return asToolText(status);
+    })
+  );
+
+  server.registerTool(
+    "consolidate",
+    {
+      description:
+        "Run the LLM Wiki v2 consolidation pass, rolling working-tier insight pages into episodic, semantic, and procedural tiers.",
+      inputSchema: {
+        dryRun: z.boolean().optional().describe("Return decisions without writing any files")
+      }
+    },
+    safeHandler(async ({ dryRun }) => {
+      const result = await consolidateVault(rootDir, { dryRun: dryRun ?? false });
+      return asToolText(result);
     })
   );
 

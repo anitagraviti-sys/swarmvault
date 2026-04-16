@@ -22,6 +22,7 @@ import {
 import { buildCodeIndex, enrichResolvedCodeImports, modulePageTitle } from "./code-analysis.js";
 import { conflictConfidence, edgeConfidence, nodeConfidence } from "./confidence.js";
 import { defaultVaultSchema, initWorkspace, loadVaultConfig, PRIMARY_SCHEMA_FILENAME } from "./config.js";
+import { runConsolidation } from "./consolidate.js";
 import { runDeepLint } from "./deep-lint.js";
 import { embeddingSimilarityEdges, semanticGraphMatches, semanticPageSearch } from "./embeddings.js";
 import { markSuperseded, resolveDecayConfig, runDecayPass } from "./freshness.js";
@@ -99,6 +100,7 @@ import type {
   CompileOptions,
   CompileResult,
   CompileState,
+  ConsolidationResult,
   ExploreOptions,
   ExploreResult,
   ExploreStepResult,
@@ -5204,6 +5206,22 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
     }
   }
 
+  // Consolidation pass: roll up working-tier insights into episodic,
+  // semantic, and procedural tiers. Runs after decay so we operate on
+  // the freshly-updated decay signals. Staged approvals skip this pass
+  // for the same reason as decay — the pass writes directly into the
+  // live wiki rather than into an approval bundle.
+  if (!options.approve && !sync.staged) {
+    try {
+      const consolidation = await runConsolidation(rootDir, config.consolidation ?? {});
+      if (consolidation.newPages.length) {
+        sync.changedPages = uniqueStrings([...sync.changedPages, ...consolidation.newPages.map((page) => page.path)]);
+      }
+    } catch {
+      // Never fail compile for a consolidation error.
+    }
+  }
+
   const benchmark = options.approve ? { ok: true } : await runConfiguredBenchmark(rootDir, config);
   if (!options.approve && benchmark.ok) {
     await refreshIndexesAndSearch(rootDir, sync.allPages);
@@ -5988,6 +6006,60 @@ function isClaimPlaceholderBullet(line: string): boolean {
   return /^-\s+No\s+claims\s+extracted\.?$/i.test(trimmed);
 }
 
+function tierLintFindings(
+  paths: Awaited<ReturnType<typeof loadVaultConfig>>["paths"],
+  graph: GraphArtifact,
+  consolidationConfig: VaultConfig["consolidation"],
+  now: Date = new Date()
+): LintFinding[] {
+  const findings: LintFinding[] = [];
+  const resolved = {
+    sessionWindowHours: consolidationConfig?.workingToEpisodic?.sessionWindowHours ?? 24
+  };
+  const pageIndex = new Map(graph.pages.map((page) => [page.id, page] as const));
+  const staleCutoffMs = now.getTime() - resolved.sessionWindowHours * 60 * 60 * 1000 * 2;
+  for (const page of graph.pages) {
+    if (page.kind !== "insight") {
+      continue;
+    }
+    const tier = page.tier ?? "working";
+    if (tier === "working" && !page.supersededBy) {
+      const updatedMs = Date.parse(page.updatedAt);
+      if (!Number.isNaN(updatedMs) && updatedMs < staleCutoffMs) {
+        findings.push({
+          severity: "info",
+          code: "stale_working_tier",
+          message: `Working-tier insight ${page.title} has not been consolidated after the session window.`,
+          pagePath: path.join(paths.wikiDir, page.path),
+          relatedPageIds: [page.id]
+        });
+      }
+    }
+    if ((tier === "episodic" || tier === "semantic" || tier === "procedural") && page.consolidatedFromPageIds?.length) {
+      const missing = page.consolidatedFromPageIds.filter((id) => !pageIndex.has(id));
+      if (missing.length > 0) {
+        findings.push({
+          severity: "warning",
+          code: "broken_consolidation_basis",
+          message: `Tier page ${page.title} references missing lower-tier page ids: ${missing.join(", ")}.`,
+          pagePath: path.join(paths.wikiDir, page.path),
+          relatedPageIds: [page.id]
+        });
+      }
+    }
+    if (tier === "semantic" && (!page.consolidatedFromPageIds || page.consolidatedFromPageIds.length === 0)) {
+      findings.push({
+        severity: "warning",
+        code: "semantic_without_episodic_basis",
+        message: `Semantic-tier page ${page.title} has no episodic basis recorded.`,
+        pagePath: path.join(paths.wikiDir, page.path),
+        relatedPageIds: [page.id]
+      });
+    }
+  }
+  return findings;
+}
+
 function decayLintFindings(
   paths: Awaited<ReturnType<typeof loadVaultConfig>>["paths"],
   graph: GraphArtifact,
@@ -6187,7 +6259,7 @@ export async function lintVault(rootDir: string, options: LintOptions = {}): Pro
   }
 
   // Decay-only mode: surface only decay-related lint rules.
-  if (options.decay && !options.deep && !options.conflicts) {
+  if (options.decay && !options.deep && !options.conflicts && !options.tiers) {
     const decayFindings = decayLintFindings(paths, graph, config.freshness);
     await recordSession(rootDir, {
       operation: "lint",
@@ -6203,8 +6275,26 @@ export async function lintVault(rootDir: string, options: LintOptions = {}): Pro
     return decayFindings;
   }
 
+  // Tier-only mode: surface only consolidation-tier lint rules.
+  if (options.tiers && !options.deep && !options.conflicts && !options.decay) {
+    const tierFindings = tierLintFindings(paths, graph, config.consolidation);
+    await recordSession(rootDir, {
+      operation: "lint",
+      title: `Linted ${graph.pages.length} page(s)`,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      success: true,
+      relatedPageIds: graph.pages.map((page) => page.id),
+      relatedSourceIds: uniqueStrings(graph.pages.flatMap((page) => page.sourceIds)),
+      lintFindingCount: tierFindings.length,
+      lines: [`findings=${tierFindings.length}`, `deep=false`, `web=false`, `conflicts=false`, `tiers=true`]
+    });
+    return tierFindings;
+  }
+
   const findings = await structuralLintFindings(rootDir, paths, graph, schemas, manifests, sourceProjects);
   findings.push(...decayLintFindings(paths, graph, config.freshness));
+  findings.push(...tierLintFindings(paths, graph, config.consolidation));
 
   // Include deterministic contradiction findings when conflicts flag is set
   if (options.conflicts) {
@@ -6250,4 +6340,14 @@ export async function bootstrapDemo(rootDir: string, input?: string): Promise<{ 
     manifestId: manifest.sourceId,
     compile
   };
+}
+
+/**
+ * Vault-level wrapper around the consolidation engine so the CLI, MCP,
+ * and schedule callers all go through a single entry point. The provider
+ * is optional; the rollup is purely heuristic otherwise.
+ */
+export async function consolidateVault(rootDir: string, options: { dryRun?: boolean } = {}): Promise<ConsolidationResult> {
+  const { config } = await loadVaultConfig(rootDir);
+  return runConsolidation(rootDir, config.consolidation ?? {}, undefined, { dryRun: options.dryRun ?? false });
 }
