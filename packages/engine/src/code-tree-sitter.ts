@@ -4449,11 +4449,13 @@ function cssCodeAnalysis(manifest: SourceManifest, rootNode: TreeNode, diagnosti
 //   2. Walk elements inside the template for ids and PascalCase tag names
 //      (Vue's component-reference convention); those become variable and
 //      class symbols respectively.
-// We intentionally DO NOT attempt to nest-parse the script block's embedded
-// JS/TS here; that would require re-invoking the TypeScript analyzer on the
-// `raw_text`, which changes the shape of `analyzeTreeSitterCode` and is a
-// follow-up. The SFC is still classified as `vue` and contributes the
-// outer component symbol to the graph.
+// This function covers the SFC structural pass only. Nest-parsing the
+// embedded JS/TS in each `<script>` (and `<script setup>`) block is done
+// from `analyzeCodeSource` in `code-analysis.ts`: it re-invokes the
+// TypeScript analyzer on each script's inner text and merges the
+// resulting imports/symbols/exports/diagnostics/rationales into the Vue
+// analysis, with diagnostic line numbers shifted by the script's line
+// offset so they still resolve to the original `.vue` coordinates.
 function vueCodeAnalysis(manifest: SourceManifest, rootNode: TreeNode, diagnostics: CodeDiagnostic[]): CodeAnalysis {
   const imports: CodeImport[] = [];
   const draftSymbols: DraftCodeSymbol[] = [];

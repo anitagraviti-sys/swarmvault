@@ -2323,7 +2323,12 @@ function candidateExtensionsFor(language: CodeLanguage): string[] {
     case "jsx":
     case "typescript":
     case "tsx":
-      return [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
+      return [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".vue"];
+    case "vue":
+      // Vue SFCs import sibling JS/TS modules and other .vue components; treat
+      // the candidate set identically to TypeScript so nested-parsed imports
+      // resolve to real sibling files.
+      return [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".vue"];
     case "bash":
       return [".sh", ".bash", ".zsh"];
     case "python":
@@ -2809,6 +2814,7 @@ function findImportCandidates(manifest: SourceManifest, codeImport: CodeImport, 
     case "jsx":
     case "typescript":
     case "tsx":
+    case "vue":
       return repoRelativePath && isRelativeSpecifier(codeImport.specifier)
         ? repoPathMatches(lookup, ...importResolutionCandidates(repoRelativePath, codeImport.specifier, candidateExtensionsFor(language)))
         : aliasMatches(lookup, codeImport.specifier);
@@ -2895,6 +2901,7 @@ function importLooksLocal(manifest: SourceManifest, codeImport: CodeImport, cand
     case "jsx":
     case "typescript":
     case "tsx":
+    case "vue":
       return isRelativeSpecifier(codeImport.specifier);
     case "python":
       return codeImport.specifier.startsWith(".");
@@ -2966,12 +2973,188 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Vue single-file components place TypeScript/JavaScript inside a
+// <script> (or <script setup>) block. The outer .vue parse only
+// covers SFC structure (template/script/style boundaries, PascalCase tag
+// references, element ids). To expose the real JS/TS symbols and imports
+// from the script portion we run the existing TypeScript analyzer over
+// each script block's inner text and merge the resulting imports,
+// symbols, exports, diagnostics, and rationales back into the Vue
+// analysis. The script text is located with a narrow markup-level
+// regex (SFC boundary extraction, not code analysis); the JS/TS
+// inside is still parsed by the real TypeScript AST.
+const VUE_SCRIPT_BLOCK_REGEX = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+
+type VueScriptBlock = {
+  content: string;
+  lineOffset: number;
+  language: "typescript" | "tsx" | "javascript" | "jsx";
+  setup: boolean;
+};
+
+function vueScriptLanguageFromAttributes(attributes: string): "typescript" | "tsx" | "javascript" | "jsx" {
+  const langMatch = attributes.match(/\blang\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const lang = (langMatch?.[1] ?? langMatch?.[2] ?? langMatch?.[3] ?? "").trim().toLowerCase();
+  const hasJsx = /\bjsx\b/.test(attributes) || lang === "tsx" || lang === "jsx";
+  if (lang === "ts" || lang === "typescript" || lang === "tsx") {
+    return hasJsx ? "tsx" : "typescript";
+  }
+  if (lang === "js" || lang === "javascript" || lang === "jsx") {
+    return hasJsx ? "jsx" : "javascript";
+  }
+  // Vue SFCs default to JavaScript in the absence of lang, but modern
+  // <script setup> projects overwhelmingly use TypeScript. Pick TypeScript
+  // as the default so vanilla <script setup> blocks without lang="ts"
+  // still get symbol/import extraction via the TS parser; the TS grammar is
+  // a superset of JS so JS-only scripts still parse cleanly.
+  return "typescript";
+}
+
+function extractVueScriptBlocks(source: string): VueScriptBlock[] {
+  const blocks: VueScriptBlock[] = [];
+  VUE_SCRIPT_BLOCK_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null = VUE_SCRIPT_BLOCK_REGEX.exec(source);
+  while (match !== null) {
+    const attributes = match[1] ?? "";
+    const content = match[2] ?? "";
+    const openTagEnd = match.index + match[0].indexOf(">") + 1;
+    // Line offset is the 0-based line index of the first character of the
+    // script's inner content inside the original Vue file. It is added to
+    // per-block diagnostic line numbers so they resolve back to the Vue
+    // file's coordinate system.
+    const lineOffset = source.slice(0, openTagEnd).split("\n").length - 1;
+    const setup = /\bsetup\b/.test(attributes);
+    blocks.push({
+      content,
+      lineOffset,
+      language: vueScriptLanguageFromAttributes(attributes),
+      setup
+    });
+    match = VUE_SCRIPT_BLOCK_REGEX.exec(source);
+  }
+  return blocks;
+}
+
+function mergeVueScriptAnalyses(
+  outer: { code: CodeAnalysis; rationales: SourceRationale[] },
+  inners: Array<{ code: CodeAnalysis; rationales: SourceRationale[]; lineOffset: number }>
+): { code: CodeAnalysis; rationales: SourceRationale[] } {
+  if (inners.length === 0) {
+    return outer;
+  }
+
+  const mergedImports = [...outer.code.imports];
+  const seenImportKeys = new Set(
+    mergedImports.map((imp) => `${imp.specifier}\u0000${imp.reExport ? "re" : "im"}\u0000${imp.isTypeOnly ? "t" : "v"}`)
+  );
+
+  const mergedSymbols = [...outer.code.symbols];
+  const seenSymbolKeys = new Set(mergedSymbols.map((symbol) => `${symbol.name}\u0000${symbol.kind}`));
+
+  const mergedExports = [...outer.code.exports];
+  const seenExports = new Set(mergedExports);
+
+  const mergedDiagnostics = [...outer.code.diagnostics];
+  const mergedDependencies = new Set(outer.code.dependencies);
+
+  const mergedRationales: SourceRationale[] = [...outer.rationales];
+  const seenRationaleKeys = new Set(mergedRationales.map((r) => `${r.symbolName ?? ""}:${r.text.toLowerCase()}`));
+
+  for (const inner of inners) {
+    for (const imp of inner.code.imports) {
+      const key = `${imp.specifier}\u0000${imp.reExport ? "re" : "im"}\u0000${imp.isTypeOnly ? "t" : "v"}`;
+      if (!seenImportKeys.has(key)) {
+        mergedImports.push(imp);
+        seenImportKeys.add(key);
+      }
+    }
+
+    for (const symbol of inner.code.symbols) {
+      const key = `${symbol.name}\u0000${symbol.kind}`;
+      if (!seenSymbolKeys.has(key)) {
+        mergedSymbols.push(symbol);
+        seenSymbolKeys.add(key);
+      }
+    }
+
+    for (const label of inner.code.exports) {
+      if (!seenExports.has(label)) {
+        mergedExports.push(label);
+        seenExports.add(label);
+      }
+    }
+
+    for (const diag of inner.code.diagnostics) {
+      mergedDiagnostics.push({
+        ...diag,
+        line: diag.line + inner.lineOffset
+      });
+    }
+
+    for (const dep of inner.code.dependencies) {
+      mergedDependencies.add(dep);
+    }
+
+    for (const rationale of inner.rationales) {
+      const key = `${rationale.symbolName ?? ""}:${rationale.text.toLowerCase()}`;
+      if (!seenRationaleKeys.has(key)) {
+        mergedRationales.push(rationale);
+        seenRationaleKeys.add(key);
+      }
+    }
+  }
+
+  return {
+    code: {
+      ...outer.code,
+      imports: mergedImports,
+      dependencies: Array.from(mergedDependencies),
+      symbols: mergedSymbols,
+      exports: mergedExports,
+      diagnostics: mergedDiagnostics
+    },
+    rationales: mergedRationales
+  };
+}
+
+async function analyzeVueSource(
+  manifest: SourceManifest,
+  extractedText: string
+): Promise<{ code: CodeAnalysis; rationales: SourceRationale[] }> {
+  const outer = await analyzeTreeSitterCode(manifest, extractedText, "vue");
+  const scriptBlocks = extractVueScriptBlocks(extractedText);
+  if (scriptBlocks.length === 0) {
+    return outer;
+  }
+
+  const innerResults: Array<{ code: CodeAnalysis; rationales: SourceRationale[]; lineOffset: number }> = [];
+  for (const block of scriptBlocks) {
+    if (!block.content.trim()) {
+      continue;
+    }
+    // Reuse the original manifest but swap language so the TS analyzer picks
+    // the right ScriptKind. Keep sourceId identical so nested symbols share
+    // the Vue source's symbol scope (same module, richer set of symbols and
+    // imports).
+    const innerManifest: SourceManifest = {
+      ...manifest,
+      language: block.language
+    };
+    const analyzed = analyzeTypeScriptLikeCode(innerManifest, block.content);
+    innerResults.push({ code: analyzed.code, rationales: analyzed.rationales, lineOffset: block.lineOffset });
+  }
+
+  return mergeVueScriptAnalyses(outer, innerResults);
+}
+
 export async function analyzeCodeSource(manifest: SourceManifest, extractedText: string, schemaHash: string): Promise<SourceAnalysis> {
   const language = manifest.language ?? inferCodeLanguage(manifest.originalPath ?? manifest.storedPath, manifest.mimeType) ?? "typescript";
   const { code, rationales } =
     language === "javascript" || language === "jsx" || language === "typescript" || language === "tsx"
       ? analyzeTypeScriptLikeCode(manifest, extractedText)
-      : await analyzeTreeSitterCode(manifest, extractedText, language);
+      : language === "vue"
+        ? await analyzeVueSource(manifest, extractedText)
+        : await analyzeTreeSitterCode(manifest, extractedText, language);
 
   return {
     analysisVersion: 7,
