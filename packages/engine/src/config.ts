@@ -262,6 +262,20 @@ const vaultConfigSchema = z.object({
         )
         .optional()
     })
+    .optional(),
+  freshness: z
+    .object({
+      defaultHalfLifeDays: z.number().positive().optional(),
+      staleThreshold: z.number().min(0).max(1).optional(),
+      halfLifeDaysBySourceClass: z
+        .object({
+          first_party: z.number().positive().optional(),
+          third_party: z.number().positive().optional(),
+          resource: z.number().positive().optional(),
+          generated: z.number().positive().optional()
+        })
+        .optional()
+    })
     .optional()
 });
 

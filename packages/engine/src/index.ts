@@ -4,6 +4,18 @@ export { installAgent, installConfiguredAgents } from "./agents.js";
 export { autoCommitWikiChanges } from "./auto-commit.js";
 export { DEFAULT_PROMOTION_CONFIG, evaluateCandidateForPromotion } from "./candidate-promotion.js";
 export { defaultVaultConfig, defaultVaultSchema, initWorkspace, loadVaultConfig, resolvePaths } from "./config.js";
+export {
+  applyDecayToPages,
+  computeDecayScore,
+  DEFAULT_HALF_LIFE_DAYS,
+  DEFAULT_HALF_LIFE_DAYS_BY_SOURCE_CLASS,
+  DEFAULT_STALE_THRESHOLD,
+  markSuperseded,
+  persistDecayFrontmatter,
+  resetDecay,
+  resolveDecayConfig,
+  runDecayPass
+} from "./freshness.js";
 export { exportGraphFormat, exportGraphReportHtml, exportObsidianCanvas, exportObsidianVault } from "./graph-export.js";
 export { pushGraphNeo4j } from "./graph-push.js";
 export { blastRadius, graphDiff } from "./graph-tools.js";
@@ -45,6 +57,7 @@ export {
   blastRadiusVault,
   bootstrapDemo,
   compileVault,
+  createSupersessionEdge,
   explainGraphVault,
   exploreVault,
   getWorkspaceInfo,

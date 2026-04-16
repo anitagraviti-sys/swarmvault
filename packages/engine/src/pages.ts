@@ -174,6 +174,25 @@ export function inferPageKind(relativePath: string, explicitKind: unknown = unde
   return "index";
 }
 
+function normalizeDecayScore(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeLastConfirmedAt(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : new Date(parsed).toISOString();
+}
+
+function normalizeSupersededBy(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 export function parseStoredPage(
   relativePath: string,
   content: string,
@@ -209,6 +228,9 @@ export function parseStoredPage(
     projectIds,
     nodeIds,
     freshness: parsed.data.freshness === "stale" ? "stale" : "fresh",
+    decayScore: normalizeDecayScore(parsed.data.decay_score),
+    lastConfirmedAt: normalizeLastConfirmedAt(parsed.data.last_confirmed_at),
+    supersededBy: normalizeSupersededBy(parsed.data.superseded_by),
     status: normalizePageStatus(parsed.data.status, kind === "insight" ? "active" : "active"),
     confidence: typeof parsed.data.confidence === "number" ? parsed.data.confidence : kind === "output" ? 0.74 : 1,
     backlinks,
@@ -270,6 +292,9 @@ export async function loadInsightPages(wikiDir: string): Promise<StoredPage[]> {
         projectIds,
         nodeIds,
         freshness: parsed.data.freshness === "stale" ? "stale" : "fresh",
+        decayScore: normalizeDecayScore(parsed.data.decay_score),
+        lastConfirmedAt: normalizeLastConfirmedAt(parsed.data.last_confirmed_at),
+        supersededBy: normalizeSupersededBy(parsed.data.superseded_by),
         status: normalizePageStatus(parsed.data.status, "active"),
         confidence: typeof parsed.data.confidence === "number" ? parsed.data.confidence : 1,
         backlinks,

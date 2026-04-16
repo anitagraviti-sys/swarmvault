@@ -24,6 +24,7 @@ import { conflictConfidence, edgeConfidence, nodeConfidence } from "./confidence
 import { defaultVaultSchema, initWorkspace, loadVaultConfig, PRIMARY_SCHEMA_FILENAME } from "./config.js";
 import { runDeepLint } from "./deep-lint.js";
 import { embeddingSimilarityEdges, semanticGraphMatches, semanticPageSearch } from "./embeddings.js";
+import { markSuperseded, resolveDecayConfig, runDecayPass } from "./freshness.js";
 import { enrichGraph } from "./graph-enrichment.js";
 import {
   blastRadius,
@@ -4449,6 +4450,109 @@ export async function previewCandidatePromotions(rootDir: string): Promise<Promo
   );
 }
 
+/**
+ * Human-in-the-loop supersession: wire up a `superseded_by` edge between
+ * two existing pages and flip the older page's frontmatter to stale. The
+ * edge is written into `state/graph.json` and the older page's markdown
+ * file is updated via `markSuperseded`. Caller supplies either page ids
+ * or page paths for resolution convenience.
+ */
+export async function createSupersessionEdge(
+  rootDir: string,
+  oldPageIdOrPath: string,
+  newPageIdOrPath: string
+): Promise<{
+  oldPageId: string;
+  newPageId: string;
+  edgeId: string;
+  graphPath: string;
+  updatedPagePath: string;
+}> {
+  const startedAt = new Date().toISOString();
+  const { paths } = await loadVaultConfig(rootDir);
+  const graph = await readJsonFile<GraphArtifact>(paths.graphPath);
+  if (!graph) {
+    throw new Error("No compiled graph found. Run `swarmvault compile` first.");
+  }
+  const byIdOrPath = (target: string): GraphPage | undefined => graph.pages.find((page) => page.id === target || page.path === target);
+  const oldPage = byIdOrPath(oldPageIdOrPath);
+  const newPage = byIdOrPath(newPageIdOrPath);
+  if (!oldPage) {
+    throw new Error(`Supersession source page not found: ${oldPageIdOrPath}`);
+  }
+  if (!newPage) {
+    throw new Error(`Supersession replacement page not found: ${newPageIdOrPath}`);
+  }
+  if (oldPage.id === newPage.id) {
+    throw new Error("Supersession requires two distinct pages.");
+  }
+
+  const now = new Date();
+  const nextOldPage = markSuperseded(oldPage, newPage.id, now);
+
+  // Rewrite the older page's frontmatter in place.
+  const oldAbsolutePath = path.join(paths.wikiDir, oldPage.path);
+  if (await fileExists(oldAbsolutePath)) {
+    const current = await fs.readFile(oldAbsolutePath, "utf8");
+    const parsed = matter(current);
+    const nextData: Record<string, unknown> = {
+      ...parsed.data,
+      freshness: "stale",
+      decay_score: 0,
+      superseded_by: newPage.id,
+      updated_at: nextOldPage.updatedAt
+    };
+    await fs.writeFile(oldAbsolutePath, matter.stringify(parsed.content, nextData), "utf8");
+  }
+
+  const resolveNodeId = (pageId: string): string => {
+    const node = graph.nodes.find((item) => item.pageId === pageId);
+    return node?.id ?? pageId;
+  };
+  const sourceNodeId = resolveNodeId(oldPage.id);
+  const targetNodeId = resolveNodeId(newPage.id);
+  const edgeId = `${sourceNodeId}->${targetNodeId}:superseded_by`;
+  const edge: GraphEdge = {
+    id: edgeId,
+    source: sourceNodeId,
+    target: targetNodeId,
+    relation: "superseded_by",
+    status: "inferred",
+    evidenceClass: "inferred",
+    confidence: 1,
+    provenance: [oldPage.id, newPage.id]
+  };
+
+  const nextEdges = graph.edges.filter((existing) => existing.id !== edgeId).concat(edge);
+  const nextPages = graph.pages.map((page) => (page.id === oldPage.id ? nextOldPage : page));
+  const nextGraph: GraphArtifact = {
+    ...graph,
+    generatedAt: now.toISOString(),
+    edges: nextEdges,
+    pages: nextPages
+  };
+  await writeJsonFile(paths.graphPath, nextGraph);
+
+  await recordSession(rootDir, {
+    operation: "supersede",
+    title: `Superseded ${oldPage.id} by ${newPage.id}`,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    success: true,
+    relatedPageIds: [oldPage.id, newPage.id],
+    changedPages: [oldPage.path],
+    lines: [`old=${oldPage.id}`, `new=${newPage.id}`, `edge=${edgeId}`]
+  });
+
+  return {
+    oldPageId: oldPage.id,
+    newPageId: newPage.id,
+    edgeId,
+    graphPath: paths.graphPath,
+    updatedPagePath: oldPage.path
+  };
+}
+
 export async function archiveCandidate(rootDir: string, target: string): Promise<CandidateRecord> {
   const startedAt = new Date().toISOString();
   const { paths } = await loadVaultConfig(rootDir);
@@ -5079,6 +5183,27 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
       postPassApprovalDir = staged.approvalDir;
     }
   }
+  // Decay pass: re-confirm pages produced by this compile run and
+  // recompute decayScore/freshness/lastConfirmedAt for all live pages.
+  // Staged approvals write into an approval bundle instead of the live
+  // wiki, so decay persistence waits for the bundle to be accepted.
+  if (!options.approve && !sync.staged) {
+    try {
+      const decayResult = await runDecayPass({
+        wikiDir: paths.wikiDir,
+        graphPath: paths.graphPath,
+        pages: sync.allPages,
+        confirmedPageIds: sync.allPages.map((page) => page.id),
+        config: config.freshness
+      });
+      if (decayResult.updatedPaths.length) {
+        sync.changedPages = uniqueStrings([...sync.changedPages, ...decayResult.updatedPaths]);
+      }
+    } catch {
+      // Never fail compile for a decay persistence error.
+    }
+  }
+
   const benchmark = options.approve ? { ok: true } : await runConfiguredBenchmark(rootDir, config);
   if (!options.approve && benchmark.ok) {
     await refreshIndexesAndSearch(rootDir, sync.allPages);
@@ -5863,6 +5988,56 @@ function isClaimPlaceholderBullet(line: string): boolean {
   return /^-\s+No\s+claims\s+extracted\.?$/i.test(trimmed);
 }
 
+function decayLintFindings(
+  paths: Awaited<ReturnType<typeof loadVaultConfig>>["paths"],
+  graph: GraphArtifact,
+  freshnessConfig: VaultConfig["freshness"],
+  now: Date = new Date()
+): LintFinding[] {
+  const findings: LintFinding[] = [];
+  const decayConfig = resolveDecayConfig(freshnessConfig);
+  const staleThreshold = decayConfig.staleThreshold ?? 0.3;
+  const pageIndex = new Map(graph.pages.map((page) => [page.id, page] as const));
+  for (const page of graph.pages) {
+    const score = typeof page.decayScore === "number" ? page.decayScore : 1;
+    const belowThreshold = score < staleThreshold;
+    const supersededBy = page.supersededBy;
+
+    if (belowThreshold && !supersededBy) {
+      findings.push({
+        severity: "info",
+        code: "decayed-pages",
+        message: `Page ${page.title} has decayed (score=${score.toFixed(2)}, below threshold ${staleThreshold}).`,
+        pagePath: path.join(paths.wikiDir, page.path),
+        relatedPageIds: [page.id]
+      });
+    }
+
+    if (supersededBy && !pageIndex.has(supersededBy)) {
+      findings.push({
+        severity: "warning",
+        code: "broken_supersession",
+        message: `Page ${page.title} is marked supersededBy ${supersededBy}, but that page does not exist.`,
+        pagePath: path.join(paths.wikiDir, page.path),
+        relatedPageIds: [page.id]
+      });
+    }
+
+    if (page.freshness === "stale" && !supersededBy && score >= staleThreshold) {
+      findings.push({
+        severity: "info",
+        code: "inconsistent_decay",
+        message: `Page ${page.title} is marked stale but decay score ${score.toFixed(2)} is above the threshold.`,
+        pagePath: path.join(paths.wikiDir, page.path),
+        relatedPageIds: [page.id]
+      });
+    }
+  }
+  // `now` participates in the signature so callers can pass a fixed clock in tests.
+  void now;
+  return findings;
+}
+
 function structuralLintFindings(
   _rootDir: string,
   paths: Awaited<ReturnType<typeof loadVaultConfig>>["paths"],
@@ -5996,7 +6171,7 @@ export async function lintVault(rootDir: string, options: LintOptions = {}): Pro
     : [];
 
   // If conflicts-only mode (no deep or structural lint requested), return only contradiction findings
-  if (options.conflicts && !options.deep) {
+  if (options.conflicts && !options.deep && !options.decay) {
     await recordSession(rootDir, {
       operation: "lint",
       title: `Linted ${graph.pages.length} page(s)`,
@@ -6011,7 +6186,25 @@ export async function lintVault(rootDir: string, options: LintOptions = {}): Pro
     return contradictionFindings;
   }
 
+  // Decay-only mode: surface only decay-related lint rules.
+  if (options.decay && !options.deep && !options.conflicts) {
+    const decayFindings = decayLintFindings(paths, graph, config.freshness);
+    await recordSession(rootDir, {
+      operation: "lint",
+      title: `Linted ${graph.pages.length} page(s)`,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      success: true,
+      relatedPageIds: graph.pages.map((page) => page.id),
+      relatedSourceIds: uniqueStrings(graph.pages.flatMap((page) => page.sourceIds)),
+      lintFindingCount: decayFindings.length,
+      lines: [`findings=${decayFindings.length}`, `deep=false`, `web=false`, `conflicts=false`, `decay=true`]
+    });
+    return decayFindings;
+  }
+
   const findings = await structuralLintFindings(rootDir, paths, graph, schemas, manifests, sourceProjects);
+  findings.push(...decayLintFindings(paths, graph, config.freshness));
 
   // Include deterministic contradiction findings when conflicts flag is set
   if (options.conflicts) {
@@ -6037,7 +6230,8 @@ export async function lintVault(rootDir: string, options: LintOptions = {}): Pro
       `findings=${findings.length}`,
       `deep=${Boolean(options.deep)}`,
       `web=${Boolean(options.web)}`,
-      `conflicts=${Boolean(options.conflicts)}`
+      `conflicts=${Boolean(options.conflicts)}`,
+      `decay=${Boolean(options.decay)}`
     ]
   });
 

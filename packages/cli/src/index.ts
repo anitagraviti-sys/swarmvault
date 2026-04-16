@@ -13,6 +13,7 @@ import {
   benchmarkVault,
   blastRadiusVault,
   compileVault,
+  createSupersessionEdge,
   deleteManagedSource,
   explainGraphVault,
   exploreVault,
@@ -882,13 +883,15 @@ program
   .option("--no-deep", "Skip deep lint even if enabled in config")
   .option("--web", "Augment deep lint with configured web search", false)
   .option("--conflicts", "Filter to contradiction findings only", false)
-  .action(async (options: { deep?: boolean; web?: boolean; conflicts?: boolean }) => {
+  .option("--decay", "Filter to decay-related findings only", false)
+  .action(async (options: { deep?: boolean; web?: boolean; conflicts?: boolean; decay?: boolean }) => {
     const lintConfig = await loadVaultConfig(process.cwd()).catch(() => null);
-    const deepEnabled = options.deep ?? lintConfig?.config.profile.deepLintDefault ?? false;
+    const deepEnabled = options.decay ? false : (options.deep ?? lintConfig?.config.profile.deepLintDefault ?? false);
     const findings = await lintVault(process.cwd(), {
       deep: deepEnabled,
       web: options.web ?? false,
-      conflicts: options.conflicts ?? false
+      conflicts: options.conflicts ?? false,
+      decay: options.decay ?? false
     });
     if (isJson()) {
       emitJson(findings);
@@ -1148,6 +1151,20 @@ graph
     for (const mod of result.affectedModules) {
       log(`  ${"  ".repeat(mod.depth - 1)}${mod.label} (depth ${mod.depth})`);
     }
+  });
+
+graph
+  .command("supersession")
+  .description("Record that one page has been replaced by another (writes a superseded_by edge).")
+  .argument("<pageId>", "Page id or path of the older page")
+  .argument("<replacedById>", "Page id or path of the replacement page")
+  .action(async (pageId: string, replacedById: string) => {
+    const result = await createSupersessionEdge(process.cwd(), pageId, replacedById);
+    if (isJson()) {
+      emitJson(result);
+      return;
+    }
+    log(`Superseded ${result.oldPageId} by ${result.newPageId} (edge ${result.edgeId}).`);
   });
 
 const review = program.command("review").description("Review staged compile approval bundles.");

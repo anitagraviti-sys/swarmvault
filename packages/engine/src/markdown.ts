@@ -42,6 +42,33 @@ export interface GeneratedPageDecorations {
   sourceClass?: SourceClass;
 }
 
+export interface DecayFrontmatter {
+  decayScore?: number;
+  lastConfirmedAt?: string;
+  supersededBy?: string;
+}
+
+/**
+ * Emit the decay/supersession fragment of a page frontmatter. Fields are
+ * only included when set so pages that never tracked decay stay byte-stable.
+ */
+export function decayFrontmatterFragment(decay?: DecayFrontmatter): Record<string, unknown> {
+  if (!decay) {
+    return {};
+  }
+  const fragment: Record<string, unknown> = {};
+  if (typeof decay.decayScore === "number" && Number.isFinite(decay.decayScore)) {
+    fragment.decay_score = Math.max(0, Math.min(1, decay.decayScore));
+  }
+  if (typeof decay.lastConfirmedAt === "string" && decay.lastConfirmedAt) {
+    fragment.last_confirmed_at = decay.lastConfirmedAt;
+  }
+  if (typeof decay.supersededBy === "string" && decay.supersededBy) {
+    fragment.superseded_by = decay.supersededBy;
+  }
+  return fragment;
+}
+
 function uniqueStrings(values: string[]): string[] {
   return uniqueBy(values.filter(Boolean), (value) => value);
 }

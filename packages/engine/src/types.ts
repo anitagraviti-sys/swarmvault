@@ -320,6 +320,16 @@ export interface VaultConfig {
     autoPromote?: CandidatePromotionConfig;
   };
   redaction?: RedactionSettings;
+  freshness?: FreshnessConfig;
+}
+
+export interface FreshnessConfig {
+  /** Default half-life in days when the page's source class is unknown. Defaults to 365. */
+  defaultHalfLifeDays?: number;
+  /** Below this score a page is considered stale. Defaults to 0.3. */
+  staleThreshold?: number;
+  /** Per-source-class half-life overrides in days. */
+  halfLifeDaysBySourceClass?: Partial<Record<SourceClass, number>>;
 }
 
 export interface RedactionPatternConfig {
@@ -739,6 +749,17 @@ export interface GraphNode {
   tags?: string[];
 }
 
+/**
+ * Graph edges use an open-string `relation` so new semantics can land
+ * without churning every consumer. Commonly produced relations include:
+ *   - `mentions`, `contains_code`, `defines`, `exports`, `imports`,
+ *     `contradicts`, `supports`, `builds_on`.
+ *   - `superseded_by`: the source node/page has been replaced by the
+ *     target. The older page is expected to carry `freshness: "stale"`
+ *     and `supersededBy` pointing at the target page id. Compile,
+ *     ingest, and human review can all produce this relation; lint
+ *     surfaces broken supersession links.
+ */
 export interface GraphEdge {
   id: string;
   source: string;
@@ -776,6 +797,26 @@ export interface GraphPage {
   projectIds: string[];
   nodeIds: string[];
   freshness: Freshness;
+  /**
+   * Numeric freshness score in [0, 1] that decays over time based on the
+   * source-class half-life. `1` means fully fresh (just confirmed), `0`
+   * means fully decayed. Pages that predate decay tracking are treated as
+   * `1` so old vaults are not penalized. See `freshness.ts` for the decay
+   * function and thresholds.
+   */
+  decayScore?: number;
+  /**
+   * ISO timestamp of the last time compile or ingest confirmed this page
+   * against a live source/claim. Missing on pages that existed before
+   * decay tracking landed.
+   */
+  lastConfirmedAt?: string;
+  /**
+   * If set, this page has been superseded by another page. The value is
+   * the replacement page id. A matching `superseded_by` relation edge
+   * connects the old page's node to the replacement in the graph.
+   */
+  supersededBy?: string;
   status: PageStatus;
   confidence: number;
   backlinks: string[];
@@ -1275,6 +1316,11 @@ export interface LintOptions {
   deep?: boolean;
   web?: boolean;
   conflicts?: boolean;
+  /**
+   * When true, only decay-related lint rules run
+   * (`decayed-pages`, `broken_supersession`, `inconsistent_decay`).
+   */
+  decay?: boolean;
 }
 
 export interface ExploreOptions {
