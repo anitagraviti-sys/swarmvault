@@ -746,7 +746,14 @@ export interface SourceRationale {
   id: string;
   text: string;
   citation: string;
-  kind: "docstring" | "comment" | "marker";
+  /**
+   * Structural kind for code rationales (`docstring`, `comment`, `marker`) or
+   * the lowercased fixed-prefix marker for non-code rationales (`note`,
+   * `why`, `hack`, `important`, `rationale`, `todo`, `fixme`, `warning`,
+   * `warn`). Non-code kinds are parser-selected from markdown blockquotes /
+   * list items and plain-text paragraphs, never swept from whole files.
+   */
+  kind: "docstring" | "comment" | "marker" | "note" | "why" | "hack" | "important" | "rationale" | "todo" | "fixme" | "warning" | "warn";
   symbolName?: string;
 }
 

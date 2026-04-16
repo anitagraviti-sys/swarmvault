@@ -2266,6 +2266,39 @@ function buildGraph(
           provenance: [analysis.sourceId, targetSourceId]
         });
       }
+    } else if (analysis.rationales.length) {
+      // Non-code source rationales (markdown blockquote / list-item, plain
+      // text paragraph) attach directly to the `source:` node. There is no
+      // code symbol to target, and the `symbolName` captured from the
+      // nearest preceding heading is preserved on the node for downstream
+      // rendering rather than used as an edge target.
+      const manifest = manifestsById.get(analysis.sourceId);
+      if (manifest) {
+        const sourceNodeId = `source:${analysis.sourceId}`;
+        for (const rationale of analysis.rationales) {
+          rationaleMap.set(rationale.id, {
+            id: rationale.id,
+            type: "rationale",
+            label: truncate(rationale.text, 80),
+            pageId: sourceNodeId,
+            freshness: "fresh",
+            confidence: 1,
+            sourceIds: [analysis.sourceId],
+            projectIds: scopedProjectIdsFromSources([analysis.sourceId], sourceProjects),
+            sourceClass: manifest.sourceClass
+          });
+          pushEdge({
+            id: `${rationale.id}->${sourceNodeId}:rationale_for`,
+            source: rationale.id,
+            target: sourceNodeId,
+            relation: "rationale_for",
+            status: "extracted",
+            evidenceClass: "extracted",
+            confidence: 1,
+            provenance: [analysis.sourceId]
+          });
+        }
+      }
     }
   }
 

@@ -3,13 +3,28 @@ import nlp from "compromise";
 import { z } from "zod";
 import { analyzeCodeSource } from "./code-analysis.js";
 import { readExtractionArtifact } from "./ingest.js";
-import { type MarkdownNode, markdownNodeText, parseMarkdownNodes } from "./markdown-ast.js";
+import {
+  extractRationaleFromMarkdown,
+  extractRationaleFromPlainText,
+  type MarkdownNode,
+  markdownNodeText,
+  parseMarkdownNodes
+} from "./markdown-ast.js";
 import type { VaultSchema } from "./schema.js";
 import { contentTokens } from "./tokenize.js";
-import type { Polarity, ProviderAdapter, ResolvedPaths, SourceAnalysis, SourceExtractionArtifact, SourceManifest } from "./types.js";
+import type {
+  Polarity,
+  ProviderAdapter,
+  ResolvedPaths,
+  SourceAnalysis,
+  SourceExtractionArtifact,
+  SourceKind,
+  SourceManifest,
+  SourceRationale
+} from "./types.js";
 import { firstSentences, normalizeWhitespace, readJsonFile, sha256, slugify, truncate, uniqueBy, writeJsonFile } from "./utils.js";
 
-const ANALYSIS_FORMAT_VERSION = 7;
+const ANALYSIS_FORMAT_VERSION = 8;
 
 const sourceAnalysisSchema = z.object({
   title: z.string().min(1),
@@ -44,6 +59,59 @@ const HEURISTIC_SECTION_SOURCE_KINDS = new Map<SourceManifest["sourceKind"], str
   ["email", "Message"],
   ["calendar", "Description"]
 ]);
+
+/**
+ * Source kinds whose extracted text is markdown-shaped, so the markdown AST
+ * walker can surface blockquote / list-item rationale markers. PDF, DOCX,
+ * HTML, EPUB, ODT, RTF, org-mode, AsciiDoc, and Jupyter sources are all
+ * extracted to markdown by the ingest pipeline and therefore share the
+ * same walker.
+ */
+const MARKDOWN_RATIONALE_KINDS = new Set<SourceKind>([
+  "markdown",
+  "html",
+  "pdf",
+  "docx",
+  "epub",
+  "odt",
+  "rtf",
+  "org",
+  "asciidoc",
+  "jupyter"
+]);
+
+/**
+ * Source kinds whose extracted text is plain paragraphs (or
+ * paragraph-shaped) so the blank-line paragraph split is the right
+ * structural parser. The prefix check still only runs on an already
+ * paragraph-isolated block, never on the whole file.
+ */
+const PLAIN_TEXT_RATIONALE_KINDS = new Set<SourceKind>(["text", "transcript", "chat_export", "email", "calendar"]);
+
+function filenameStemForSource(manifest: SourceManifest): string {
+  const candidate = manifest.repoRelativePath ?? manifest.originalPath ?? manifest.storedPath;
+  const base = path.basename(candidate);
+  const stem = base.replace(/\.[^.]+$/, "");
+  return stem || manifest.title;
+}
+
+function extractNonCodeRationales(manifest: SourceManifest, rawText: string): SourceRationale[] {
+  if (!rawText.trim()) {
+    return [];
+  }
+  if (MARKDOWN_RATIONALE_KINDS.has(manifest.sourceKind)) {
+    const fallback = filenameStemForSource(manifest);
+    const rationales = extractRationaleFromMarkdown(rawText, manifest.sourceId);
+    return rationales.map((entry) => ({
+      ...entry,
+      symbolName: entry.symbolName ?? fallback
+    }));
+  }
+  if (PLAIN_TEXT_RATIONALE_KINDS.has(manifest.sourceKind)) {
+    return extractRationaleFromPlainText(rawText, manifest.sourceId, filenameStemForSource(manifest));
+  }
+  return [];
+}
 
 function extractTopTerms(text: string, count: number): string[] {
   // contentTokens already drops closed-class words via compromise POS tagging,
@@ -425,6 +493,18 @@ export async function analyzeSource(
       analysis = await providerAnalysis(manifest, content, provider, schema);
     } catch {
       analysis = heuristicAnalysis(manifest, content, schema.hash);
+    }
+  }
+
+  // Attach non-code rationales (markdown blockquotes / list items, plain
+  // text paragraphs) once the per-kind analysis has been chosen. Code
+  // rationales are already emitted by `analyzeCodeSource`; this only
+  // covers the prose-shaped source kinds that previously had an empty
+  // `rationales` array.
+  if (manifest.sourceKind !== "code" && !analysis.rationales.length) {
+    const extra = extractNonCodeRationales(manifest, extractedText ?? "");
+    if (extra.length) {
+      analysis = { ...analysis, rationales: extra };
     }
   }
 
