@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useHashRoute } from "../src/hooks/useHashRoute";
 import { type ThemeChoice, useTheme } from "../src/hooks/useTheme";
 import { useUndoBuffer } from "../src/hooks/useUndoBuffer";
 
@@ -66,6 +67,33 @@ describe("useTheme", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     act(() => capture?.setTheme("system" as ThemeChoice));
     expect(document.documentElement.getAttribute("data-theme")).toBeNull();
+    act(() => root.unmount());
+  });
+});
+
+describe("useHashRoute", () => {
+  it("round-trips a multi-tag selection through the URL hash", () => {
+    let capture: ReturnType<typeof useHashRoute> | null = null;
+    function Probe() {
+      capture = useHashRoute();
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    window.location.hash = "";
+    act(() => {
+      root.render(<Probe />);
+    });
+    act(() => {
+      capture?.navigate({ view: "tags", params: { selected: "graphs,agents" } });
+    });
+    expect(window.location.hash).toBe("#tags?selected=graphs%2Cagents");
+    // Simulate a hashchange triggered by user navigation.
+    window.location.hash = "#tags?selected=graphs";
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(capture?.route.view).toBe("tags");
+    expect(capture?.route.params.selected).toBe("graphs");
     act(() => root.unmount());
   });
 });

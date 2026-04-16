@@ -100,7 +100,12 @@ type GraphCanvasProps = {
   edgeStatusFilter: string;
   communityFilter: string;
   sourceClassFilter: string;
-  tagFilter?: string;
+  /**
+   * Multi-tag AND filter. When non-empty, only nodes whose page carries
+   * every tag in the list are visible. An empty array means "show all",
+   * matching the prior single-tag behaviour when no tag was selected.
+   */
+  selectedTags?: string[];
   pathResult: ViewerGraphPathResult | null;
   onNodeSelect: (node: ViewerGraphNode | null) => void;
   cyRef: React.MutableRefObject<Core | null>;
@@ -114,7 +119,7 @@ export function GraphCanvas({
   edgeStatusFilter,
   communityFilter,
   sourceClassFilter,
-  tagFilter = "all",
+  selectedTags = [],
   pathResult,
   onNodeSelect,
   cyRef,
@@ -152,14 +157,16 @@ export function GraphCanvas({
     cyRef.current?.resize();
   });
 
-  // Tag filter set
+  // Tag filter set: a node is allowed only when its page carries every
+  // tag in `selectedTags` (AND semantics). An empty `selectedTags`
+  // disables the filter and lets every node through.
   const tagAllowedNodeIds = (() => {
-    if (!graph || tagFilter === "all" || !pageTags) return null;
+    if (!graph || selectedTags.length === 0 || !pageTags) return null;
     const allowed = new Set<string>();
     for (const node of graph.nodes) {
       if (!node.pageId) continue;
-      const tags = pageTags[node.pageId];
-      if (tags?.includes(tagFilter)) allowed.add(node.id);
+      const tags = pageTags[node.pageId] ?? [];
+      if (selectedTags.every((tag) => tags.includes(tag))) allowed.add(node.id);
     }
     return allowed;
   })();

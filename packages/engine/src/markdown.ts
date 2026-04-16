@@ -178,6 +178,37 @@ function decoratedTags(baseTags: string[], decorations?: GeneratedPageDecoration
   ]);
 }
 
+/**
+ * Sort tags deterministically while keeping the first "kind" tag (and any
+ * `candidate` companion) pinned to the front. This preserves the existing
+ * visual convention where `#concept` / `#entity` / `#source` lead the tag
+ * list on a page while the remainder are stable across runs.
+ */
+function sortDerivedTags(tags: string[], leaders: string[]): string[] {
+  const deduped = uniqueStrings(tags);
+  const pinned: string[] = [];
+  const rest: string[] = [];
+  for (const tag of deduped) {
+    if (leaders.includes(tag)) continue;
+    rest.push(tag);
+  }
+  for (const leader of leaders) {
+    if (deduped.includes(leader)) pinned.push(leader);
+  }
+  rest.sort((left, right) => left.localeCompare(right));
+  return [...pinned, ...rest];
+}
+
+/**
+ * Compute the union of tags emitted onto contributing source pages so
+ * derived concept/entity/insight pages inherit the same tag vocabulary.
+ * Returns a deduped, stable list (unsorted — callers apply their own
+ * ordering via `sortDerivedTags` if needed).
+ */
+export function inheritedSourceTags(sourceAnalyses: Pick<SourceAnalysis, "tags">[]): string[] {
+  return uniqueStrings(sourceAnalyses.flatMap((analysis) => analysis.tags ?? []));
+}
+
 function pagePathFor(kind: Exclude<PageKind, "index">, slug: string): string {
   switch (kind) {
     case "source":
@@ -613,13 +644,16 @@ export function buildAggregatePage(
   const sourceIds = sourceAnalyses.map((item) => item.sourceId);
   const otherPages = [...sourceAnalyses.map((item) => `source:${item.sourceId}`), ...relatedOutputs.map((page) => page.id)];
   const summary = descriptions.find(Boolean) ?? `${kind} aggregated from ${sourceIds.length} source(s).`;
+  const leaderTags = metadata.status === "candidate" ? [kind, "candidate"] : [kind];
+  const inheritedTags = inheritedSourceTags(sourceAnalyses);
+  const derivedTags = sortDerivedTags([...decoratedTags(leaderTags, decorations), ...inheritedTags], leaderTags);
   const frontmatter = {
     page_id: pageId,
     kind,
     cssclasses: cssclassesFor(kind),
     title: name,
     ...(decorations?.sourceClass ? { source_class: decorations.sourceClass } : {}),
-    tags: decoratedTags(metadata.status === "candidate" ? [kind, "candidate"] : [kind], decorations),
+    tags: derivedTags,
     source_ids: sourceIds,
     project_ids: decorations?.projectIds ?? [],
     node_ids: [pageId],

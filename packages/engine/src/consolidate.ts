@@ -270,12 +270,66 @@ function insightPagePath(tier: Exclude<MemoryTier, "working">, slugSource: strin
   return `insights/${tier}/${slugify(slugSource)}.md`;
 }
 
+/**
+ * Pull the `tags` array out of a stored insight page's frontmatter so a
+ * higher-tier rollup can inherit the same tag vocabulary.
+ *
+ * Reading tags off the raw markdown (rather than `GraphPage`) avoids
+ * widening the `GraphPage` type just to carry a cosmetic field that
+ * lives in frontmatter. Non-array / non-string values are ignored so
+ * malformed upstream pages never crash the consolidation pass.
+ */
+export function extractStoredPageTags(stored: StoredPage): string[] {
+  try {
+    const parsed = matter(stored.content);
+    const raw = parsed.data?.tags;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((value): value is string => typeof value === "string" && value.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Sort inherited insight tags deterministically while pinning the kind
+ * and tier leader tags to the front. This keeps the visual convention
+ * (`#insight #episodic ...`) and still guarantees stable ordering.
+ */
+function sortDerivedTagsForInsight(tags: string[], leaders: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const tag of tags) {
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    deduped.push(tag);
+  }
+  const pinned: string[] = [];
+  const rest: string[] = [];
+  for (const tag of deduped) {
+    if (leaders.includes(tag)) continue;
+    rest.push(tag);
+  }
+  for (const leader of leaders) {
+    if (seen.has(leader)) pinned.push(leader);
+  }
+  rest.sort((left, right) => left.localeCompare(right));
+  return [...pinned, ...rest];
+}
+
 function buildConsolidatedPage(input: {
   tier: Exclude<MemoryTier, "working">;
   title: string;
   summary: string;
   relativePath: string;
   sourcePages: GraphPage[];
+  /**
+   * Tags to inherit from the contributing source pages. The derived page
+   * keeps its own `insight` + `tier` kind tags, then merges the union of
+   * these inherited tags (deduped, sorted) so tag-based navigation can
+   * pivot from a source page to its rolled-up insight without losing the
+   * originating tag vocabulary.
+   */
+  inheritedTags?: string[];
   confidence: number;
   now: Date;
 }): { page: GraphPage; content: string } {
@@ -287,11 +341,16 @@ function buildConsolidatedPage(input: {
   const relatedPageIds = sourcePages.map((page) => page.id);
   const consolidatedFromPageIds = sourcePages.map((page) => page.id);
   const createdAt = now.toISOString();
+  const leaderTags = ["insight", tier];
+  const projectTags = projectIds.map((projectId) => `project/${projectId}`);
+  const inheritedTags = (input.inheritedTags ?? []).filter((tag): tag is string => typeof tag === "string" && tag.length > 0);
+  const tags = sortDerivedTagsForInsight([...leaderTags, ...projectTags, ...inheritedTags], leaderTags);
   const frontmatter: Record<string, unknown> = {
     page_id: pageId,
     title,
     kind: "insight",
     tier,
+    tags,
     consolidated_from_page_ids: consolidatedFromPageIds,
     consolidation_confidence: Math.max(0, Math.min(1, confidence)),
     source_ids: sourceIds,
@@ -440,6 +499,7 @@ export async function runConsolidation(
       summary: titleSummary.summary,
       relativePath,
       sourcePages: groupPages,
+      inheritedTags: group.pages.flatMap((stored) => extractStoredPageTags(stored)),
       confidence,
       now
     });
@@ -486,6 +546,7 @@ export async function runConsolidation(
       summary: titleSummary.summary,
       relativePath,
       sourcePages: pages.map((stored) => stored.page),
+      inheritedTags: pages.flatMap((stored) => extractStoredPageTags(stored)),
       confidence,
       now
     });
@@ -548,6 +609,7 @@ export async function runConsolidation(
       summary: titleSummary.summary,
       relativePath,
       sourcePages: ordered.map((stored) => stored.page),
+      inheritedTags: ordered.flatMap((stored) => extractStoredPageTags(stored)),
       confidence,
       now
     });

@@ -86,7 +86,7 @@ export function App() {
   const [communityFilter, setCommunityFilter] = useState<string>("all");
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
   const [sourceClassFilter, setSourceClassFilter] = useState<string>("all");
-  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ViewerSearchResult[]>([]);
   const [searchSort, setSearchSort] = useState<SearchSort>("relevance");
@@ -475,8 +475,19 @@ export function App() {
     if (route.view === "node" && route.params.id) {
       navigateNode(route.params.id);
     }
+    // Legacy single-tag hash (`#tag?tag=foo`) — kept for existing deep links.
     if (route.view === "tag" && route.params.tag) {
-      setTagFilter(route.params.tag);
+      setSelectedTags([route.params.tag]);
+    }
+    // Multi-tag hash (`#tags?selected=foo,bar`) — AND-filter the graph by
+    // every tag listed. Empty / missing `selected` clears the filter.
+    if (route.view === "tags") {
+      const raw = route.params.selected ?? "";
+      const parsed = raw
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      setSelectedTags(parsed);
     }
     if (route.view === "approval" && route.params.id) {
       setWorkflowTab("approvals");
@@ -495,6 +506,44 @@ export function App() {
       setGraphError(error instanceof Error ? error.message : String(error));
     }
   }, []);
+
+  // Sync the selected-tag list to state, the URL hash, and the graph
+  // filter in one place. When the list is non-empty we use the new
+  // `#tags?selected=foo,bar` route so bookmarks survive a page reload;
+  // when it empties we clear the route back to the default view.
+  const updateSelectedTags = useCallback(
+    (next: string[]) => {
+      const deduped = [...new Set(next.filter((value) => value.length > 0))];
+      setSelectedTags(deduped);
+      if (deduped.length === 0) {
+        if (route.view === "tag" || route.view === "tags") {
+          navigate({ view: "", params: {} });
+        }
+        return;
+      }
+      navigate({ view: "tags", params: { selected: deduped.join(",") } });
+    },
+    [navigate, route.view]
+  );
+
+  const toggleSelectedTag = useCallback(
+    (tag: string) => {
+      setSelectedTags((current) => {
+        const next = current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag];
+        if (next.length === 0) {
+          navigate({ view: "", params: {} });
+        } else {
+          navigate({ view: "tags", params: { selected: next.join(",") } });
+        }
+        return next;
+      });
+    },
+    [navigate]
+  );
+
+  const clearSelectedTags = useCallback(() => {
+    updateSelectedTags([]);
+  }, [updateSelectedTags]);
 
   // --- Command palette + shortcuts ---
   const focusGlobalSearch = useCallback(() => {
@@ -541,12 +590,11 @@ export function App() {
         section: "Tags",
         keywords: ["tag", entry.tag],
         run: () => {
-          setTagFilter(entry.tag);
-          navigate({ view: "tag", params: { tag: entry.tag } });
+          updateSelectedTags([entry.tag]);
         }
       }))
     ],
-    [focusGlobalSearch, focusGraphQuery, focusPathInput, navigate, refresh, setTheme, tagOptions]
+    [focusGlobalSearch, focusGraphQuery, focusPathInput, refresh, setTheme, tagOptions, updateSelectedTags]
   );
 
   const shortcuts = useMemo<Shortcut[]>(
@@ -649,11 +697,9 @@ export function App() {
           communityFilter={communityFilter}
           onCommunityChange={setCommunityFilter}
           communityOptions={communityOptions}
-          tagFilter={tagFilter}
-          onTagChange={(value) => {
-            setTagFilter(value);
-            navigate({ view: "tag", params: { tag: value === "all" ? "" : value } });
-          }}
+          selectedTags={selectedTags}
+          onToggleTag={toggleSelectedTag}
+          onClearTags={clearSelectedTags}
           tagOptions={tagOptions}
           query={query}
           onQueryChange={setQuery}
@@ -692,7 +738,7 @@ export function App() {
             edgeStatusFilter={edgeStatusFilter}
             communityFilter={communityFilter}
             sourceClassFilter={sourceClassFilter}
-            tagFilter={tagFilter}
+            selectedTags={selectedTags}
             pageTags={pageTags}
             pathResult={pathResult}
             onNodeSelect={setSelected}

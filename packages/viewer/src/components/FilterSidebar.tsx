@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type FilterSidebarProps = {
   edgeStatusFilter: string;
@@ -19,12 +19,25 @@ type FilterSidebarProps = {
   communityFilter: string;
   onCommunityChange: (value: string) => void;
   communityOptions: string[];
-  tagFilter: string;
-  onTagChange: (value: string) => void;
+  /**
+   * Currently selected tag filters. When the array is empty, every page is
+   * visible; when populated, pages must match every selected tag (AND).
+   */
+  selectedTags: string[];
+  /**
+   * Toggle a tag's selection on or off. The parent owns the selection list
+   * so it can keep URL hash state and graph filtering in sync.
+   */
+  onToggleTag: (tag: string) => void;
+  /** Clear the active tag filter back to "show all". */
+  onClearTags: () => void;
   tagOptions: { tag: string; count: number }[];
   query: string;
   onQueryChange: (value: string) => void;
 };
+
+/** Number of tag pills rendered before the "Show all N tags" expander kicks in. */
+const DEFAULT_TAG_LIMIT = 20;
 
 export function FilterSidebar({
   edgeStatusFilter,
@@ -45,13 +58,16 @@ export function FilterSidebar({
   communityFilter,
   onCommunityChange,
   communityOptions,
-  tagFilter,
-  onTagChange,
+  selectedTags,
+  onToggleTag,
+  onClearTags,
   tagOptions,
   query,
   onQueryChange
 }: FilterSidebarProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["graph", "tags"]));
+  const [tagSearch, setTagSearch] = useState("");
+  const [showAllTags, setShowAllTags] = useState(false);
 
   const toggle = (section: string) => {
     setExpanded((prev) => {
@@ -62,9 +78,24 @@ export function FilterSidebar({
     });
   };
 
+  const selectedTagSet = useMemo(() => new Set(selectedTags), [selectedTags]);
+
+  const filteredTags = useMemo(() => {
+    const needle = tagSearch.trim().toLowerCase();
+    if (!needle) return tagOptions;
+    return tagOptions.filter(({ tag }) => tag.toLowerCase().includes(needle));
+  }, [tagOptions, tagSearch]);
+
+  const visibleTags = useMemo(() => {
+    if (showAllTags || tagSearch.trim().length > 0) return filteredTags;
+    return filteredTags.slice(0, DEFAULT_TAG_LIMIT);
+  }, [filteredTags, showAllTags, tagSearch]);
+
+  const hiddenTagCount = filteredTags.length - visibleTags.length;
+
   const graphActiveCount = [edgeStatusFilter, communityFilter, sourceClassFilter].filter((v) => v !== "all").length;
   const pagesActiveCount = [kindFilter, pageStatusFilter, projectFilter, sourceTypeFilter].filter((v) => v !== "all").length;
-  const tagsActiveCount = tagFilter !== "all" ? 1 : 0;
+  const tagsActiveCount = selectedTags.length;
 
   return (
     <div className="sidebar" data-drawer="sidebar">
@@ -138,26 +169,56 @@ export function FilterSidebar({
           {tagOptions.length === 0 ? (
             <p className="text-muted text-sm">No tags in this vault yet.</p>
           ) : (
-            <div className="chip-row">
-              <button
-                type="button"
-                className={`chip chip-tag${tagFilter === "all" ? " is-active" : ""}`}
-                onClick={() => onTagChange("all")}
-              >
-                all
-              </button>
-              {tagOptions.slice(0, 40).map(({ tag, count }) => (
+            <>
+              <label className="filter-group">
+                <span className="filter-label">Filter tags</span>
+                <input
+                  type="search"
+                  className="input"
+                  value={tagSearch}
+                  onChange={(event) => setTagSearch(event.target.value)}
+                  placeholder="Search tags…"
+                  aria-label="Search tags"
+                  data-testid="tag-search-input"
+                />
+              </label>
+              <div className="chip-row" data-testid="tag-chip-row">
                 <button
-                  key={tag}
                   type="button"
-                  className={`chip chip-tag${tagFilter === tag ? " is-active" : ""}`}
-                  onClick={() => onTagChange(tag === tagFilter ? "all" : tag)}
-                  title={`${count} pages`}
+                  className={`chip chip-tag${selectedTags.length === 0 ? " is-active" : ""}`}
+                  onClick={onClearTags}
+                  data-testid="tag-chip-all"
                 >
-                  #{tag} <span className="text-muted text-xs">{count}</span>
+                  all
                 </button>
-              ))}
-            </div>
+                {visibleTags.map(({ tag, count }) => {
+                  const active = selectedTagSet.has(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      className={`chip chip-tag${active ? " is-active" : ""}`}
+                      onClick={() => onToggleTag(tag)}
+                      title={`${count} pages`}
+                      data-testid={`tag-chip-${tag}`}
+                      aria-pressed={active}
+                    >
+                      #{tag} <span className="text-muted text-xs">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {hiddenTagCount > 0 || (showAllTags && filteredTags.length > DEFAULT_TAG_LIMIT) ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllTags((value) => !value)}
+                  data-testid="tag-expander"
+                >
+                  {showAllTags ? "Show fewer tags" : `Show all ${filteredTags.length} tags`}
+                </button>
+              ) : null}
+            </>
           )}
         </div>
       </div>
