@@ -1384,21 +1384,21 @@ try {
       await fs.mkdir(exportDir, { recursive: true });
 
       await withOverviewFixture(async () => {
-        const overview = await runCliJson(["graph", "export", "--html", overviewPath]);
+        const overview = await runCliJson(["graph", "export", "--html", overviewPath, "--overview"]);
         assert.equal(overview.outputPath, overviewPath, "overview graph export returned an unexpected output path");
         const overviewEmbedded = readEmbeddedViewerData(await fs.readFile(overviewPath, "utf8"));
-        assert.equal(overviewEmbedded.graph.presentation.mode, "overview", "graph export did not enter overview mode");
+        assert.equal(overviewEmbedded.graph.presentation.mode, "overview", "graph export --overview did not enter overview mode");
         assert.equal(overviewEmbedded.graph.presentation.totalNodes, 5_100, "overview export reported the wrong total node count");
         assert.ok(
           overviewEmbedded.graph.presentation.displayedNodes <= overviewEmbedded.graph.presentation.nodeBudget,
           "overview export exceeded the display node budget"
         );
 
-        const full = await runCliJson(["graph", "export", "--html", fullPath, "--full"]);
+        const full = await runCliJson(["graph", "export", "--html", fullPath]);
         assert.equal(full.outputPath, fullPath, "full graph export returned an unexpected output path");
         const fullEmbedded = readEmbeddedViewerData(await fs.readFile(fullPath, "utf8"));
-        assert.equal(fullEmbedded.graph.presentation.mode, "full", "graph export --full did not disable overview mode");
-        assert.equal(fullEmbedded.graph.presentation.displayedNodes, 5_100, "graph export --full did not render the full graph");
+        assert.equal(fullEmbedded.graph.presentation.mode, "full", "graph export did not default to full graph");
+        assert.equal(fullEmbedded.graph.presentation.displayedNodes, 5_100, "default graph export did not render the full graph");
 
       });
     });
