@@ -8,10 +8,11 @@ import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { fetchTranscript } from "youtube-transcript-plus";
 import { z } from "zod";
+import { loadVaultConfig } from "./config.js";
 import { firstMarkdownHeading } from "./markdown-ast.js";
 import { getProviderForTask } from "./providers/registry.js";
-import type { ProviderAdapter, SourceExtractionArtifact, SourceKind } from "./types.js";
-import { normalizeWhitespace, sha256, truncate } from "./utils.js";
+import type { GraphArtifact, GraphNode, ProviderAdapter, SourceExtractionArtifact, SourceKind } from "./types.js";
+import { fileExists, normalizeWhitespace, readJsonFile, sha256, truncate } from "./utils.js";
 
 const imageVisionExtractionSchema = z.object({
   title: z.string().min(1).nullable().optional(),
@@ -214,9 +215,45 @@ export async function extractImageWithVision(
   }
 }
 
+/**
+ * Build a one-sentence domain hint from the vault's top god-nodes.
+ *
+ * Read the most-connected non-source nodes from the compiled graph and produce
+ * a hint like `"This audio is likely about ClaimGraph, ApprovalBundle,
+ * LouvainDetector."` so providers that accept a Whisper-style prompt can bias
+ * transcription toward in-corpus terminology. Silent fallback when the graph
+ * is absent, empty, or unreadable — transcription still runs without a hint.
+ */
+export async function buildCorpusHint(rootDir: string, maxTerms = 6): Promise<string | undefined> {
+  let graphPath: string;
+  try {
+    const { paths } = await loadVaultConfig(rootDir);
+    graphPath = paths.graphPath;
+  } catch {
+    return undefined;
+  }
+  if (!(await fileExists(graphPath))) {
+    return undefined;
+  }
+  const graph = await readJsonFile<GraphArtifact>(graphPath);
+  if (!graph || !Array.isArray(graph.nodes) || graph.nodes.length === 0) {
+    return undefined;
+  }
+  const top = graph.nodes
+    .filter((node: GraphNode) => node.type !== "source" && Boolean(node.label))
+    .sort((left: GraphNode, right: GraphNode) => (right.degree ?? 0) - (left.degree ?? 0))
+    .slice(0, maxTerms)
+    .map((node: GraphNode) => node.label.trim())
+    .filter((label: string) => label.length > 0);
+  if (top.length === 0) {
+    return undefined;
+  }
+  return `This audio is likely about ${top.join(", ")}.`;
+}
+
 export async function extractAudioTranscription(
   rootDir: string,
-  input: { mimeType: string; bytes: Buffer; fileName?: string }
+  input: { mimeType: string; bytes: Buffer; fileName?: string; corpusHint?: string }
 ): Promise<{ extractedText?: string; artifact: SourceExtractionArtifact }> {
   let provider: ProviderAdapter;
   try {
@@ -239,11 +276,14 @@ export async function extractAudioTranscription(
     };
   }
 
+  const corpusHint = input.corpusHint ?? (await buildCorpusHint(rootDir));
+
   try {
     const result = await provider.transcribeAudio({
       mimeType: input.mimeType,
       bytes: input.bytes,
-      fileName: input.fileName
+      fileName: input.fileName,
+      corpusHint
     });
 
     const metadata: Record<string, string> = {};
@@ -252,6 +292,9 @@ export async function extractAudioTranscription(
     }
     if (result.language) {
       metadata.language = result.language;
+    }
+    if (corpusHint) {
+      metadata.corpus_hint = corpusHint;
     }
 
     return {

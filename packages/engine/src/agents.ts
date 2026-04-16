@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
@@ -133,25 +134,138 @@ const agentFileKinds = {
   copilot: ".github/copilot-instructions.md",
   trae: ".trae/rules/swarmvault.md",
   claw: ".claw/skills/swarmvault/SKILL.md",
-  droid: ".factory/rules/swarmvault.md"
+  droid: ".factory/rules/swarmvault.md",
+  kiro: ".kiro/skills/swarmvault/SKILL.md",
+  kiroSteering: ".kiro/steering/swarmvault.md",
+  antigravityRules: ".agent/rules/swarmvault.md",
+  antigravityWorkflow: ".agent/workflows/swarmvault.md",
+  vscode: ".github/chatmodes/swarmvault.chatmode.md"
 } as const;
+
+const hermesUserSkillRelative = path.join(".hermes", "skills", "swarmvault", "SKILL.md");
+
+function hermesUserSkillPath(): string {
+  return path.join(os.homedir(), hermesUserSkillRelative);
+}
+
+const SWARMVAULT_RULE_BULLETS = [
+  "- Read `swarmvault.schema.md` before compile or query style work. It is the canonical schema path.",
+  "- Treat `raw/` as immutable source input.",
+  "- Treat `wiki/` as generated markdown owned by the agent and compiler workflow.",
+  "- Read `wiki/graph/report.md` before broad file searching when it exists; otherwise start with `wiki/index.md`.",
+  "- For graph questions, prefer `swarmvault graph query`, `swarmvault graph path`, and `swarmvault graph explain` before broad grep/glob searching.",
+  "- Preserve frontmatter fields including `page_id`, `source_ids`, `node_ids`, `freshness`, and `source_hashes`.",
+  "- Save high-value answers back into `wiki/outputs/` instead of leaving them only in chat.",
+  "- Prefer `swarmvault ingest`, `swarmvault compile`, `swarmvault query`, and `swarmvault lint` for SwarmVault maintenance tasks."
+];
 
 function buildManagedBlock(target: keyof typeof agentFileKinds): string {
   const heading =
     target === "aider" ? "# SwarmVault Conventions" : target === "copilot" ? "# SwarmVault Repository Instructions" : "# SwarmVault Rules";
+  return [managedStart, heading, "", ...SWARMVAULT_RULE_BULLETS, managedEnd, ""].join("\n");
+}
+
+function buildSkillFrontmatter(): string {
+  const frontmatter = YAML.stringify({
+    name: "swarmvault",
+    description: "SwarmVault graph-first workflow. Use to read the compiled wiki and query the knowledge graph before broad file search."
+  }).trimEnd();
+  return ["---", frontmatter, "---"].join("\n");
+}
+
+function buildSkillBody(): string {
   return [
-    managedStart,
-    heading,
+    "# SwarmVault",
     "",
-    "- Read `swarmvault.schema.md` before compile or query style work. It is the canonical schema path.",
-    "- Treat `raw/` as immutable source input.",
-    "- Treat `wiki/` as generated markdown owned by the agent and compiler workflow.",
-    "- Read `wiki/graph/report.md` before broad file searching when it exists; otherwise start with `wiki/index.md`.",
-    "- For graph questions, prefer `swarmvault graph query`, `swarmvault graph path`, and `swarmvault graph explain` before broad grep/glob searching.",
-    "- Preserve frontmatter fields including `page_id`, `source_ids`, `node_ids`, `freshness`, and `source_hashes`.",
-    "- Save high-value answers back into `wiki/outputs/` instead of leaving them only in chat.",
-    "- Prefer `swarmvault ingest`, `swarmvault compile`, `swarmvault query`, and `swarmvault lint` for SwarmVault maintenance tasks.",
-    managedEnd,
+    "SwarmVault compiles curated sources in `raw/` into a queryable wiki in `wiki/` and a knowledge graph in `state/graph.json`.",
+    "",
+    "## Rules",
+    "",
+    ...SWARMVAULT_RULE_BULLETS,
+    "",
+    "## Entry points",
+    "",
+    "- `swarmvault ingest <path>` — register a new source",
+    "- `swarmvault compile` — refresh wiki pages and graph",
+    '- `swarmvault query "<question>"` — save-first multi-step query',
+    "- `swarmvault graph query|path|explain` — deterministic graph traversal",
+    "- `swarmvault lint` — wiki health and contradiction checks",
+    ""
+  ].join("\n");
+}
+
+function buildStandaloneSkillFile(): string {
+  return `${buildSkillFrontmatter()}\n\n${buildSkillBody()}`;
+}
+
+function buildKiroSteeringFile(): string {
+  const frontmatter = YAML.stringify({
+    inclusion: "always",
+    description: "Always-on SwarmVault rules."
+  }).trimEnd();
+  return ["---", frontmatter, "---", "", "# SwarmVault Rules", "", ...SWARMVAULT_RULE_BULLETS, ""].join("\n");
+}
+
+function buildAntigravityRulesFile(): string {
+  const frontmatter = YAML.stringify({
+    alwaysApply: true,
+    description: "SwarmVault graph-first repository rules."
+  }).trimEnd();
+  return [
+    "---",
+    frontmatter,
+    "---",
+    "",
+    "# SwarmVault Rules",
+    "",
+    ...SWARMVAULT_RULE_BULLETS,
+    "",
+    "> MCP navigation hint: SwarmVault exposes a local MCP server via `swarmvault mcp`. Wire it into your Antigravity MCP config to query the graph without shelling out."
+  ].join("\n");
+}
+
+function buildAntigravityWorkflowFile(): string {
+  const frontmatter = YAML.stringify({
+    command: "swarmvault",
+    description: "Compile, query, and lint the SwarmVault vault."
+  }).trimEnd();
+  return [
+    "---",
+    frontmatter,
+    "---",
+    "",
+    "# /swarmvault",
+    "",
+    "Run SwarmVault against the current directory.",
+    "",
+    "## Steps",
+    "",
+    "1. If no vault exists, run `swarmvault init`.",
+    "2. For new sources, run `swarmvault ingest <path>`.",
+    "3. Run `swarmvault compile` to refresh the wiki and graph.",
+    "4. For follow-up questions, prefer `swarmvault query`, `swarmvault graph query`, `swarmvault graph path`, `swarmvault graph explain`.",
+    "5. Save high-value answers to `wiki/outputs/`.",
+    ""
+  ].join("\n");
+}
+
+function buildVscodeChatmodeFile(): string {
+  const frontmatter = YAML.stringify({
+    description: "SwarmVault graph-first workflow for VS Code Copilot Chat.",
+    tools: ["codebase", "terminal"]
+  }).trimEnd();
+  return [
+    "---",
+    frontmatter,
+    "---",
+    "",
+    "# SwarmVault mode",
+    "",
+    "You are working inside a SwarmVault vault. Follow these rules before other actions:",
+    "",
+    ...SWARMVAULT_RULE_BULLETS,
+    "",
+    "Use the terminal tool to run `swarmvault` commands. Prefer graph queries over broad grep/glob.",
     ""
   ].join("\n");
 }
@@ -191,6 +305,14 @@ function primaryTargetPathForAgent(rootDir: string, agent: AgentType): string {
       return path.join(rootDir, agentFileKinds.claw);
     case "droid":
       return path.join(rootDir, agentFileKinds.droid);
+    case "kiro":
+      return path.join(rootDir, agentFileKinds.kiro);
+    case "hermes":
+      return hermesUserSkillPath();
+    case "antigravity":
+      return path.join(rootDir, agentFileKinds.antigravityRules);
+    case "vscode":
+      return path.join(rootDir, agentFileKinds.vscode);
     default:
       throw new Error(`Unsupported agent ${String(agent)}`);
   }
@@ -233,6 +355,18 @@ function targetsForAgent(rootDir: string, agent: AgentType, options: InstallAgen
 
   if (agent === "aider") {
     targets.push(path.join(rootDir, ".aider.conf.yml"));
+  }
+
+  if (agent === "kiro") {
+    targets.push(path.join(rootDir, agentFileKinds.kiroSteering));
+  }
+
+  if (agent === "hermes") {
+    targets.push(path.join(rootDir, agentFileKinds.agents));
+  }
+
+  if (agent === "antigravity") {
+    targets.push(path.join(rootDir, agentFileKinds.antigravityWorkflow));
   }
 
   if (options.hook && supportsAgentHook(agent)) {
@@ -500,6 +634,21 @@ export async function installAgent(rootDir: string, agent: AgentType, options: I
       break;
     case "droid":
       await writeOwnedFile(target, buildManagedBlock("droid"));
+      break;
+    case "kiro":
+      await writeOwnedFile(target, buildStandaloneSkillFile());
+      await writeOwnedFile(path.join(rootDir, agentFileKinds.kiroSteering), buildKiroSteeringFile());
+      break;
+    case "hermes":
+      await upsertManagedBlock(path.join(rootDir, agentFileKinds.agents), buildManagedBlock("agents"));
+      await writeOwnedFile(hermesUserSkillPath(), buildStandaloneSkillFile());
+      break;
+    case "antigravity":
+      await writeOwnedFile(target, buildAntigravityRulesFile());
+      await writeOwnedFile(path.join(rootDir, agentFileKinds.antigravityWorkflow), buildAntigravityWorkflowFile());
+      break;
+    case "vscode":
+      await writeOwnedFile(target, buildVscodeChatmodeFile());
       break;
     default:
       throw new Error(`Unsupported agent ${String(agent)}`);

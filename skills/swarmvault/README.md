@@ -158,6 +158,10 @@ Supported agent installs:
 - `swarmvault install --agent trae`
 - `swarmvault install --agent claw`
 - `swarmvault install --agent droid`
+- `swarmvault install --agent kiro`
+- `swarmvault install --agent hermes`
+- `swarmvault install --agent antigravity`
+- `swarmvault install --agent vscode`
 
 Expose the vault over MCP with:
 

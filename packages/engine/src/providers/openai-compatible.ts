@@ -275,6 +275,9 @@ export class OpenAiCompatibleProviderAdapter extends BaseProviderAdapter {
     if (request.language) {
       formData.append("language", request.language);
     }
+    if (request.corpusHint) {
+      formData.append("prompt", request.corpusHint);
+    }
 
     const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
       method: "POST",

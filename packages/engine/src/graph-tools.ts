@@ -17,7 +17,17 @@ import type {
 import { normalizeWhitespace, uniqueBy } from "./utils.js";
 
 function normalizeTarget(value: string): string {
-  return normalizeWhitespace(value).toLowerCase();
+  // NFKD strips diacritics (e.g. "Café" → "Cafe"), then we drop combining marks,
+  // so graph query/path/explain can match labels regardless of accent marks.
+  return normalizeWhitespace(value)
+    .normalize("NFKD")
+    .replace(/\p{Mn}+/gu, "")
+    .toLowerCase();
+}
+
+/** Precomputed diacritic-insensitive label for graph-time lookups. */
+export function computeNormLabel(label: string): string {
+  return normalizeTarget(label);
 }
 
 function nodeById(graph: GraphArtifact): Map<string, GraphNode> {

@@ -63,6 +63,30 @@ describe("OpenAiCompatibleProviderAdapter.transcribeAudio", () => {
     expect(formData.get("file")).toBeInstanceOf(File);
   });
 
+  it("forwards corpusHint as Whisper prompt when provided", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ text: "hi" }), { status: 200, headers: { "content-type": "application/json" } })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new OpenAiCompatibleProviderAdapter("test-audio", "openai", "whisper-1", {
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "test-key",
+      apiStyle: "chat",
+      capabilities: ["chat", "audio"]
+    });
+
+    await provider.transcribeAudio({
+      mimeType: "audio/mpeg",
+      bytes: Buffer.from("fake"),
+      corpusHint: "This audio is likely about ClaimGraph, ApprovalBundle."
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const formData = init.body as FormData;
+    expect(formData.get("prompt")).toBe("This audio is likely about ClaimGraph, ApprovalBundle.");
+  });
+
   it("throws on non-OK response", async () => {
     vi.stubGlobal(
       "fetch",

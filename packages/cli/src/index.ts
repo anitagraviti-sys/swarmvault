@@ -78,9 +78,9 @@ program
 function readCliVersion(): string {
   try {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string };
-    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "0.8.0";
+    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "0.9.0";
   } catch {
-    return "0.8.0";
+    return "0.9.0";
   }
 }
 
@@ -259,17 +259,27 @@ program
     "--profile <profile>",
     "Starter workspace profile or comma-separated preset list (for example: personal-research or reader,timeline)"
   )
-  .action(async (options: { obsidian?: boolean; profile?: string }) => {
-    await initVault(process.cwd(), { obsidian: options.obsidian ?? false, profile: options.profile });
+  .option(
+    "--lite",
+    "Minimal LLM-Wiki starter (raw/, wiki/, wiki/index.md, wiki/log.md, swarmvault.schema.md) without config, state, or agent installs",
+    false
+  )
+  .action(async (options: { obsidian?: boolean; profile?: string; lite?: boolean }) => {
+    await initVault(process.cwd(), {
+      obsidian: options.obsidian ?? false,
+      profile: options.profile,
+      lite: options.lite ?? false
+    });
     if (isJson()) {
       emitJson({
         status: "initialized",
         rootDir: process.cwd(),
         obsidian: options.obsidian ?? false,
-        profile: options.profile ?? "default"
+        profile: options.profile ?? "default",
+        lite: options.lite ?? false
       });
     } else {
-      log("Initialized SwarmVault workspace.");
+      log(options.lite ? "Initialized SwarmVault lite workspace." : "Initialized SwarmVault workspace.");
     }
   });
 
@@ -1445,11 +1455,30 @@ program
 program
   .command("install")
   .description("Install SwarmVault instructions for an agent in the current project.")
-  .requiredOption("--agent <agent>", "codex, claude, cursor, goose, pi, gemini, opencode, aider, copilot, trae, claw, or droid")
+  .requiredOption(
+    "--agent <agent>",
+    "codex, claude, cursor, goose, pi, gemini, opencode, aider, copilot, trae, claw, droid, kiro, hermes, antigravity, or vscode"
+  )
   .option("--hook", "Also install hook/plugin guidance when the target agent supports it", false)
   .action(
     async (options: {
-      agent: "codex" | "claude" | "cursor" | "goose" | "pi" | "gemini" | "opencode" | "aider" | "copilot" | "trae" | "claw" | "droid";
+      agent:
+        | "codex"
+        | "claude"
+        | "cursor"
+        | "goose"
+        | "pi"
+        | "gemini"
+        | "opencode"
+        | "aider"
+        | "copilot"
+        | "trae"
+        | "claw"
+        | "droid"
+        | "kiro"
+        | "hermes"
+        | "antigravity"
+        | "vscode";
       hook?: boolean;
     }) => {
       const hookCapableAgents = new Set(["claude", "opencode", "gemini", "copilot"]);

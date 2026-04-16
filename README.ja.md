@@ -63,7 +63,7 @@ Karpathy の [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9
 
 **「100 ページ以上にスケールするか？」** —— はい。ハイブリッド検索が SQLite 全文検索とセマンティック embeddings を統合するため、すべてのページをコンテキストに入れる必要がありません。`compile --max-tokens` で出力を制限できます。グラフナビゲーション（`graph query`、`graph path`、`graph explain`）で検索ではなくトラバースが可能です。
 
-**「個人利用だけ？」** —— Git ワークフロー（`--commit`）、watch モード＋git hooks、スケジュール自動化、MCP server でチーム利用も可能です。12 種のエージェント統合があります。
+**「個人利用だけ？」** —— Git ワークフロー（`--commit`）、watch モード＋git hooks、スケジュール自動化、MCP server でチーム利用も可能です。16 種のエージェント統合があります。
 
 **「API キーは必要？」** —— 不要です。組み込み `heuristic` provider は完全にオフラインです。より高品質な抽出には [Ollama](https://ollama.com) と無料のローカル LLM を組み合わせられます。クラウド provider はオプションです。
 
@@ -82,7 +82,7 @@ Karpathy の [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9
 | オフライン / API キー不要 | — | **あり** |
 | 矛盾検出 | 言及 | **自動** |
 | Approval キュー | — | **あり** |
-| 12 種のエージェント統合 | — | **あり** |
+| 16 種のエージェント統合 | — | **あり** |
 | Neo4j / グラフエクスポート | — | **あり** |
 | MCP server | — | **あり** |
 | Watch モード + git hooks | — | **あり** |
@@ -278,7 +278,13 @@ swarmvault install --agent gemini --hook    # Gemini CLI + hook
 swarmvault install --agent trae             # Trae
 swarmvault install --agent claw             # Claw / OpenClaw skill target
 swarmvault install --agent droid            # Droid / Factory rules target
+swarmvault install --agent kiro             # Kiro IDE + 常時 steering
+swarmvault install --agent hermes           # Hermes ユーザースコープ skill
+swarmvault install --agent antigravity      # Google Antigravity ルール + /swarmvault ワークフロー
+swarmvault install --agent vscode           # VS Code Copilot Chat chatmode
 ```
+
+最小構成の LLM-Wiki スターターが欲しい場合は `swarmvault init --lite` を使ってください。`raw/`、`wiki/`、`wiki/index.md`、`wiki/log.md`、`swarmvault.schema.md` だけを作成し、設定ファイルや state、エージェントインストールは生成しません。エージェントが wiki を直接メンテナンスします。グラフ・検索・approval のフルツールチェーンが必要になったら後から `swarmvault init` でアップグレードできます。
 
 あるいは、ボルトを直接 MCP で公開します:
 
@@ -366,7 +372,7 @@ clawhub install swarmvault
 
 **任意のモデルプロバイダー** - OpenAI、Anthropic、Gemini、Ollama、OpenRouter、Groq、Together、xAI、Cerebras、汎用 OpenAI-compatible、custom adapters、そしてオフライン/ローカル既定の heuristic を使えます。
 
-**12 つの agent integration** - Codex、Claude Code、Cursor、Goose、Pi、Gemini CLI、OpenCode、Aider、GitHub Copilot CLI、Trae、Claw/OpenClaw、Droid 用のインストール規則があります。任意の graph-first hooks により、対応エージェントは広い検索の前に wiki を優先します。
+**16 つの agent integration** - Codex、Claude Code、Cursor、Goose、Pi、Gemini CLI、OpenCode、Aider、GitHub Copilot CLI、Trae、Claw/OpenClaw、Droid、Kiro、Hermes、Google Antigravity、VS Code Copilot Chat 用のインストール規則があります。任意の graph-first hooks により、対応エージェントは広い検索の前に wiki を優先します。
 
 **MCP server** - `swarmvault mcp` はボルトを stdio 経由で互換エージェントクライアントへ公開します。
 
@@ -408,6 +414,10 @@ clawhub install swarmvault
 | Trae | `swarmvault install --agent trae` |
 | Claw / OpenClaw | `swarmvault install --agent claw` |
 | Droid | `swarmvault install --agent droid` |
+| Kiro | `swarmvault install --agent kiro` |
+| Hermes | `swarmvault install --agent hermes` |
+| Google Antigravity | `swarmvault install --agent antigravity` |
+| VS Code Copilot Chat | `swarmvault install --agent vscode` |
 
 Claude Code、OpenCode、Gemini CLI、Copilot は `--hook` にも対応しており、graph-first の文脈注入ができます。
 

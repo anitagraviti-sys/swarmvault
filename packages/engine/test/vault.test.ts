@@ -477,6 +477,93 @@ describe("swarmvault workflow", () => {
     expect(cursorContentAgain).toBe(cursorContent);
   });
 
+  it("init --lite creates only the minimal LLM-Wiki starter structure", async () => {
+    const rootDir = await createTempWorkspace();
+    await initVault(rootDir, { lite: true });
+
+    await expect(fs.access(path.join(rootDir, "raw"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(rootDir, "wiki"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(rootDir, "swarmvault.schema.md"))).resolves.toBeUndefined();
+
+    const indexRaw = await fs.readFile(path.join(rootDir, "wiki", "index.md"), "utf8");
+    const parsedIndex = matter(indexRaw);
+    expect(parsedIndex.data.page_id).toBe("wiki:index");
+    expect(parsedIndex.data.managed_by).toBe("agent");
+    expect(parsedIndex.content).toContain("agent-maintained");
+
+    const logRaw = await fs.readFile(path.join(rootDir, "wiki", "log.md"), "utf8");
+    const parsedLog = matter(logRaw);
+    expect(parsedLog.data.page_id).toBe("wiki:log");
+    expect(parsedLog.content).toContain("Append-only");
+
+    // Lite must NOT create the full toolchain scaffolding
+    await expect(fs.access(path.join(rootDir, "swarmvault.config.json"))).rejects.toThrow();
+    await expect(fs.access(path.join(rootDir, "state"))).rejects.toThrow();
+    await expect(fs.access(path.join(rootDir, "wiki", "insights", "index.md"))).rejects.toThrow();
+  });
+
+  it("installs kiro, antigravity, and vscode agents with their expected layouts", async () => {
+    const rootDir = await createTempWorkspace();
+    await initVault(rootDir);
+
+    const kiroTarget = await installAgent(rootDir, "kiro");
+    expect(kiroTarget.target).toBe(path.join(rootDir, ".kiro", "skills", "swarmvault", "SKILL.md"));
+    expect(kiroTarget.targets).toContain(path.join(rootDir, ".kiro", "steering", "swarmvault.md"));
+    const kiroSkillRaw = await fs.readFile(kiroTarget.target, "utf8");
+    const kiroSkill = matter(kiroSkillRaw);
+    expect(kiroSkill.data.name).toBe("swarmvault");
+    expect(kiroSkill.content).toContain("SwarmVault compiles curated sources");
+    const kiroSteering = matter(await fs.readFile(path.join(rootDir, ".kiro", "steering", "swarmvault.md"), "utf8"));
+    expect(kiroSteering.data.inclusion).toBe("always");
+    expect(kiroSteering.content).toContain("# SwarmVault Rules");
+
+    const antigravityTarget = await installAgent(rootDir, "antigravity");
+    expect(antigravityTarget.target).toBe(path.join(rootDir, ".agent", "rules", "swarmvault.md"));
+    expect(antigravityTarget.targets).toContain(path.join(rootDir, ".agent", "workflows", "swarmvault.md"));
+    const antigravityRules = matter(await fs.readFile(antigravityTarget.target, "utf8"));
+    expect(antigravityRules.data.alwaysApply).toBe(true);
+    expect(antigravityRules.content).toContain("# SwarmVault Rules");
+    const antigravityWorkflow = matter(await fs.readFile(path.join(rootDir, ".agent", "workflows", "swarmvault.md"), "utf8"));
+    expect(antigravityWorkflow.data.command).toBe("swarmvault");
+    expect(antigravityWorkflow.content).toContain("# /swarmvault");
+
+    const vscodeTarget = await installAgent(rootDir, "vscode");
+    expect(vscodeTarget.target).toBe(path.join(rootDir, ".github", "chatmodes", "swarmvault.chatmode.md"));
+    const vscodeChatmode = matter(await fs.readFile(vscodeTarget.target, "utf8"));
+    expect(vscodeChatmode.data.description).toContain("SwarmVault");
+    expect(Array.isArray(vscodeChatmode.data.tools)).toBe(true);
+    expect(vscodeChatmode.content).toContain("# SwarmVault mode");
+  });
+
+  it("installs hermes user-scope skill + repo AGENTS.md", async () => {
+    const rootDir = await createTempWorkspace();
+    await initVault(rootDir);
+
+    const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "swarmvault-hermes-home-"));
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    try {
+      const hermesTarget = await installAgent(rootDir, "hermes");
+      const userSkillPath = path.join(fakeHome, ".hermes", "skills", "swarmvault", "SKILL.md");
+      expect(hermesTarget.target).toBe(userSkillPath);
+      expect(hermesTarget.targets).toContain(path.join(rootDir, "AGENTS.md"));
+
+      const userSkillRaw = await fs.readFile(userSkillPath, "utf8");
+      const userSkill = matter(userSkillRaw);
+      expect(userSkill.data.name).toBe("swarmvault");
+      expect(userSkill.content).toContain("SwarmVault compiles curated sources");
+
+      const agentsContent = await fs.readFile(path.join(rootDir, "AGENTS.md"), "utf8");
+      expect(agentsContent).toContain("# SwarmVault Rules");
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+      await fs.rm(fakeHome, { recursive: true, force: true });
+    }
+  });
+
   it("installs Claude rules with an optional graph-first pre-search hook", async () => {
     const rootDir = await createTempWorkspace();
     await initVault(rootDir);

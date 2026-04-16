@@ -21,11 +21,19 @@ import {
 } from "./candidate-promotion.js";
 import { buildCodeIndex, enrichResolvedCodeImports, modulePageTitle } from "./code-analysis.js";
 import { conflictConfidence, edgeConfidence, nodeConfidence } from "./confidence.js";
-import { initWorkspace, loadVaultConfig } from "./config.js";
+import { defaultVaultSchema, initWorkspace, loadVaultConfig, PRIMARY_SCHEMA_FILENAME } from "./config.js";
 import { runDeepLint } from "./deep-lint.js";
 import { embeddingSimilarityEdges, semanticGraphMatches, semanticPageSearch } from "./embeddings.js";
 import { enrichGraph } from "./graph-enrichment.js";
-import { blastRadius, explainGraphTarget, listHyperedges, queryGraph, shortestGraphPath, topGodNodes } from "./graph-tools.js";
+import {
+  blastRadius,
+  computeNormLabel,
+  explainGraphTarget,
+  listHyperedges,
+  queryGraph,
+  shortestGraphPath,
+  topGodNodes
+} from "./graph-tools.js";
 import { ingestInput, listManifests, readExtractedText } from "./ingest.js";
 import { recordSession } from "./logs.js";
 import {
@@ -1639,6 +1647,15 @@ function autoResolution(nodeCount: number, edgeCount: number): number {
   return 1.0;
 }
 
+function pruneDanglingEdges<E extends { source: string; target: string }>(nodes: Array<{ id: string }>, edges: E[]): E[] {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  return edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+}
+
+function applyNormLabel(nodes: GraphNode[]): GraphNode[] {
+  return nodes.map((node) => (node.normLabel ? node : { ...node, normLabel: computeNormLabel(node.label) }));
+}
+
 function deriveGraphMetrics(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -2162,20 +2179,34 @@ function buildGraph(
 
       for (const symbol of analysis.code.symbols) {
         for (const targetName of symbol.calls) {
-          const targetId = resolveLocalSymbolId(targetName);
-          if (!targetId || targetId === symbol.id) {
+          const localTargetId = resolveLocalSymbolId(targetName);
+          if (localTargetId && localTargetId !== symbol.id) {
+            pushEdge({
+              id: `${symbol.id}->${localTargetId}:calls`,
+              source: symbol.id,
+              target: localTargetId,
+              relation: "calls",
+              status: "extracted",
+              evidenceClass: "extracted",
+              confidence: 1,
+              provenance: [analysis.sourceId]
+            });
             continue;
           }
-          pushEdge({
-            id: `${symbol.id}->${targetId}:calls`,
-            source: symbol.id,
-            target: targetId,
-            relation: "calls",
-            status: "extracted",
-            evidenceClass: "extracted",
-            confidence: 1,
-            provenance: [analysis.sourceId]
-          });
+
+          const crossFileTargetId = importedSymbolIdsByName.get(targetName);
+          if (crossFileTargetId && crossFileTargetId !== symbol.id) {
+            pushEdge({
+              id: `${symbol.id}->${crossFileTargetId}:calls`,
+              source: symbol.id,
+              target: crossFileTargetId,
+              relation: "calls",
+              status: "inferred",
+              evidenceClass: "inferred",
+              confidence: 0.8,
+              provenance: [analysis.sourceId]
+            });
+          }
         }
 
         for (const targetName of symbol.extends) {
@@ -2297,12 +2328,18 @@ function buildGraph(
     analyses
   );
   const metrics = deriveGraphMetrics(graphNodes, enriched.edges, { resolution: options?.communityResolution });
+  const finalNodes = applyNormLabel(metrics.nodes);
+  const finalEdges = pruneDanglingEdges(finalNodes, enriched.edges);
+  const finalHyperedges = (enriched.hyperedges ?? []).filter((hyperedge) => {
+    const nodeIdSet = new Set(finalNodes.map((node) => node.id));
+    return hyperedge.nodeIds.every((id) => nodeIdSet.has(id));
+  });
 
   return {
     generatedAt: new Date().toISOString(),
-    nodes: metrics.nodes,
-    edges: enriched.edges,
-    hyperedges: enriched.hyperedges,
+    nodes: finalNodes,
+    edges: finalEdges,
+    hyperedges: finalHyperedges,
     communities: metrics.communities,
     sources: manifests,
     pages
@@ -4503,7 +4540,108 @@ async function ensureObsidianWorkspace(rootDir: string): Promise<void> {
   ]);
 }
 
+async function initLiteVault(rootDir: string, options: InitOptions): Promise<void> {
+  const rawDir = path.join(rootDir, "raw");
+  const wikiDir = path.join(rootDir, "wiki");
+  const schemaPath = path.join(rootDir, PRIMARY_SCHEMA_FILENAME);
+  const indexPath = path.join(wikiDir, "index.md");
+  const logPath = path.join(wikiDir, "log.md");
+
+  await Promise.all([ensureDir(rawDir), ensureDir(wikiDir)]);
+
+  if (!(await fileExists(schemaPath))) {
+    await fs.writeFile(schemaPath, defaultVaultSchema("default"), "utf8");
+  }
+
+  const now = new Date().toISOString();
+  if (!(await fileExists(indexPath))) {
+    await fs.writeFile(
+      indexPath,
+      matter.stringify(
+        [
+          "# Wiki Index",
+          "",
+          "This lite vault is agent-maintained. Drop sources into `raw/`, edit `swarmvault.schema.md` to teach the agent how the wiki should be organized, then ask your agent to read sources and update pages here.",
+          "",
+          "- Summaries, entity pages, and concept pages live under `wiki/`.",
+          "- Append every ingest/query/lint operation to `wiki/log.md`.",
+          "- Run `swarmvault init` (without `--lite`) when you want the full toolchain with graph, search, and approvals.",
+          ""
+        ].join("\n"),
+        {
+          page_id: "wiki:index",
+          kind: "index",
+          title: "Wiki Index",
+          tags: ["index"],
+          source_ids: [],
+          project_ids: [],
+          node_ids: [],
+          freshness: "fresh",
+          status: "active",
+          confidence: 1,
+          created_at: now,
+          updated_at: now,
+          compiled_from: [],
+          managed_by: "agent",
+          backlinks: [],
+          schema_hash: "",
+          source_hashes: {},
+          source_semantic_hashes: {}
+        }
+      ),
+      "utf8"
+    );
+  }
+
+  if (!(await fileExists(logPath))) {
+    await fs.writeFile(
+      logPath,
+      matter.stringify(
+        [
+          "# Activity Log",
+          "",
+          "Append-only chronological record. One line per ingest/query/lint operation, newest at the bottom.",
+          "",
+          "Format: `## [YYYY-MM-DD] <verb> | <subject>`",
+          ""
+        ].join("\n"),
+        {
+          page_id: "wiki:log",
+          kind: "index",
+          title: "Activity Log",
+          tags: ["log", "append-only"],
+          source_ids: [],
+          project_ids: [],
+          node_ids: [],
+          freshness: "fresh",
+          status: "active",
+          confidence: 1,
+          created_at: now,
+          updated_at: now,
+          compiled_from: [],
+          managed_by: "agent",
+          backlinks: [],
+          schema_hash: "",
+          source_hashes: {},
+          source_semantic_hashes: {}
+        }
+      ),
+      "utf8"
+    );
+  }
+
+  if (options.obsidian) {
+    const obsidianDir = path.join(rootDir, ".obsidian");
+    await ensureDir(obsidianDir);
+  }
+}
+
 export async function initVault(rootDir: string, options: InitOptions = {}): Promise<void> {
+  if (options.lite) {
+    await initLiteVault(rootDir, options);
+    return;
+  }
+
   const requestedProfile = options.profile ?? "default";
   const { config, paths } = await initWorkspace(rootDir, { profile: requestedProfile });
   const profile = config.profile;

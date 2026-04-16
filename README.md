@@ -63,7 +63,7 @@ If you liked Karpathy's [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf
 
 **"Does it scale past 100 pages?"** — Yes. Hybrid search merges SQLite full-text with semantic embeddings, so queries work without fitting every page into context. `compile --max-tokens` trims output to fit bounded windows. Graph navigation (`graph query`, `graph path`, `graph explain`) lets you traverse rather than search.
 
-**"Is it just for personal use?"** — Git-backed workflows (`--commit`), watch mode with git hooks, scheduled automation, and an MCP server make it usable for teams. Agent integrations cover 12 tools from Claude Code to Copilot.
+**"Is it just for personal use?"** — Git-backed workflows (`--commit`), watch mode with git hooks, scheduled automation, and an MCP server make it usable for teams. Agent integrations cover 16 tools from Claude Code to VS Code Copilot Chat.
 
 **"Do I need API keys?"** — No. The built-in `heuristic` provider is fully offline. For sharper extraction, pair with a free local LLM via [Ollama](https://ollama.com). Cloud providers are optional.
 
@@ -154,6 +154,8 @@ swarmvault graph push neo4j --dry-run
 ```
 
 Need the fastest first pass over a local repo or docs tree? `swarmvault scan ./path --no-serve` initializes the current directory as a vault, ingests that directory, compiles it, and skips opening the graph viewer when you only want the artifacts.
+
+Want the minimal LLM-Wiki starter instead? `swarmvault init --lite` creates just `raw/`, `wiki/`, `wiki/index.md`, `wiki/log.md`, and `swarmvault.schema.md` — no config, no state, no agent installs. Your agent maintains the wiki directly. Upgrade with `swarmvault init` later when you want graph, search, and approvals.
 
 For very large graphs, `swarmvault graph serve` and `swarmvault graph export --html` automatically start in overview mode. Add `--full` when you want the entire canvas rendered anyway.
 
@@ -274,6 +276,10 @@ swarmvault install --agent gemini --hook    # Gemini CLI + hook
 swarmvault install --agent trae             # Trae
 swarmvault install --agent claw             # Claw / OpenClaw skill target
 swarmvault install --agent droid            # Droid / Factory rules target
+swarmvault install --agent kiro             # Kiro IDE + always-on steering
+swarmvault install --agent hermes           # Hermes user-scope skill
+swarmvault install --agent antigravity      # Google Antigravity rules + /swarmvault workflow
+swarmvault install --agent vscode           # VS Code Copilot Chat chatmode
 ```
 
 Or expose the vault directly over MCP:
@@ -366,7 +372,7 @@ That installs the published `SKILL.md` plus a ClawHub README, examples, referenc
 
 **Optional model providers** - OpenAI, Anthropic, Gemini, Ollama, OpenRouter, Groq, Together, xAI, Cerebras, generic OpenAI-compatible, custom adapters, or the built-in heuristic for offline/local use.
 
-**12 agent integrations** - install rules for Codex, Claude Code, Cursor, Goose, Pi, Gemini CLI, OpenCode, Aider, GitHub Copilot CLI, Trae, Claw/OpenClaw, and Droid. Optional graph-first hooks bias supported agents toward the wiki before broad search.
+**16 agent integrations** - install rules for Codex, Claude Code, Cursor, Goose, Pi, Gemini CLI, OpenCode, Aider, GitHub Copilot CLI, Trae, Claw/OpenClaw, Droid, Kiro, Hermes, Google Antigravity, and VS Code Copilot Chat. Optional graph-first hooks bias supported agents toward the wiki before broad search.
 
 **MCP server** - `swarmvault mcp` exposes the vault to any compatible agent client over stdio.
 
@@ -408,6 +414,10 @@ Every edge is tagged `extracted`, `inferred`, or `ambiguous` - you always know w
 | Trae | `swarmvault install --agent trae` |
 | Claw / OpenClaw | `swarmvault install --agent claw` |
 | Droid | `swarmvault install --agent droid` |
+| Kiro | `swarmvault install --agent kiro` |
+| Hermes | `swarmvault install --agent hermes` |
+| Google Antigravity | `swarmvault install --agent antigravity` |
+| VS Code Copilot Chat | `swarmvault install --agent vscode` |
 
 Claude Code, OpenCode, Gemini CLI, and Copilot also support `--hook` for graph-first context injection.
 

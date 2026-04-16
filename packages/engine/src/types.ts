@@ -43,7 +43,11 @@ export const agentTypeSchema = z.enum([
   "copilot",
   "trae",
   "claw",
-  "droid"
+  "droid",
+  "kiro",
+  "hermes",
+  "antigravity",
+  "vscode"
 ]);
 export type AgentType = z.infer<typeof agentTypeSchema>;
 
@@ -176,6 +180,13 @@ export interface AudioTranscriptionRequest {
   bytes: Buffer;
   fileName?: string;
   language?: string;
+  /**
+   * Optional one-sentence domain hint derived from the vault's top god nodes.
+   * Providers that accept a prompt (e.g. Whisper) can pass it through to bias
+   * transcription toward in-corpus terminology. Providers without prompt
+   * support ignore it safely.
+   */
+  corpusHint?: string;
 }
 
 export interface AudioTranscriptionResponse {
@@ -664,6 +675,8 @@ export interface GraphNode {
   id: string;
   type: "source" | "concept" | "entity" | "module" | "symbol" | "rationale";
   label: string;
+  /** Lowercased NFKD-normalized label (diacritic-insensitive) for lexical matching. */
+  normLabel?: string;
   pageId?: string;
   freshness?: Freshness;
   confidence?: number;
@@ -925,6 +938,7 @@ export interface CompileOptions {
 export interface InitOptions {
   obsidian?: boolean;
   profile?: string;
+  lite?: boolean;
 }
 
 export interface CompileResult {
