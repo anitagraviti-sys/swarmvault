@@ -319,6 +319,33 @@ export interface VaultConfig {
   candidate?: {
     autoPromote?: CandidatePromotionConfig;
   };
+  redaction?: RedactionSettings;
+}
+
+export interface RedactionPatternConfig {
+  id: string;
+  pattern: string;
+  flags?: string;
+  placeholder?: string;
+  description?: string;
+}
+
+export interface RedactionSettings {
+  enabled?: boolean;
+  placeholder?: string;
+  useDefaults?: boolean;
+  patterns?: RedactionPatternConfig[];
+}
+
+export interface RedactionMatchSummary {
+  patternId: string;
+  count: number;
+}
+
+export interface RedactionSummary {
+  sourceId: string;
+  title: string;
+  matches: RedactionMatchSummary[];
 }
 
 export interface CandidatePromotionConfig {
@@ -475,6 +502,13 @@ export interface IngestOptions {
   gitignore?: boolean;
   extractClasses?: SourceClass[];
   resume?: string;
+  /**
+   * Override the config-level redaction flag for this run. Defaults to the
+   * effective value in `VaultConfig.redaction.enabled` (which itself defaults
+   * to `true` when the config block is absent). Pass `false` to skip
+   * redaction entirely for this run.
+   */
+  redact?: boolean;
 }
 
 export interface DirectoryIngestSkip {
@@ -498,6 +532,11 @@ export interface DirectoryIngestResult {
   failed?: DirectoryIngestFailure[];
   runId?: string;
   statePath?: string;
+  /**
+   * Per-source redaction counts surfaced to CLI/MCP callers. Empty when
+   * redaction was disabled or no matches were found on the ingested inputs.
+   */
+  redactions?: RedactionSummary[];
 }
 
 export interface InputIngestResult {
@@ -508,6 +547,11 @@ export interface InputIngestResult {
   unchanged: SourceManifest[];
   removed: SourceManifest[];
   skipped: DirectoryIngestSkip[];
+  /**
+   * Per-source redaction counts surfaced to CLI/MCP callers. Empty when
+   * redaction was disabled or no matches were found on the ingested inputs.
+   */
+  redactions?: RedactionSummary[];
 }
 
 export interface SourceManifest {

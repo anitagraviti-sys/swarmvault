@@ -43,6 +43,7 @@ import {
 } from "./extraction.js";
 import { appendLogEntry } from "./logs.js";
 import { firstMarkdownHeading } from "./markdown-ast.js";
+import { buildConfiguredRedactor, type Redactor } from "./redaction.js";
 import { classifyRepoPath, normalizeExtractClasses } from "./source-classification.js";
 import { readManagedSourcesIfPresent } from "./source-registry.js";
 import type {
@@ -53,6 +54,7 @@ import type {
   InboxImportResult,
   IngestOptions,
   InputIngestResult,
+  RedactionSummary,
   RepoSyncResult,
   ResolvedPaths,
   SourceAttachment,
@@ -190,7 +192,17 @@ type IngestPersistResult = {
   manifest: SourceManifest;
   isNew: boolean;
   wasUpdated: boolean;
+  redactions?: RedactionSummary;
 };
+
+/**
+ * Source kinds whose `payloadBytes` is a UTF-8 text body we can safely run
+ * through the redactor. Binary kinds (images, audio, pdfs, office docs) keep
+ * their original bytes on disk; their `extractedText` is redacted separately.
+ */
+function isTextualSourceKindForPayload(sourceKind: SourceManifest["sourceKind"]): boolean {
+  return sourceKind === "markdown" || sourceKind === "text" || sourceKind === "code" || sourceKind === "html";
+}
 
 type InboxAttachmentRef = {
   absolutePath: string;
@@ -208,6 +220,8 @@ type NormalizedIngestOptions = {
   extractClasses: SourceClass[];
   resume?: string;
   repoAnalysis?: VaultConfig["repoAnalysis"];
+  redact?: boolean;
+  redactor?: Redactor | null;
 };
 
 type CodeLanguageDetectionOptions = Parameters<typeof inferCodeLanguage>[2];
@@ -831,8 +845,29 @@ function normalizeIngestOptions(options?: IngestOptions): NormalizedIngestOption
     maxFiles: Math.max(1, Math.floor(options?.maxFiles ?? DEFAULT_MAX_DIRECTORY_FILES)),
     gitignore: options?.gitignore ?? true,
     extractClasses: options?.extractClasses ?? ["first_party"],
-    resume: options?.resume
+    resume: options?.resume,
+    redact: options?.redact
   };
+}
+
+/**
+ * Build the redactor used for an ingest run by combining the loaded config
+ * with the per-run `--no-redact` override. A missing `redaction` block
+ * behaves as "enabled with defaults" (safety-by-default).
+ */
+function resolveIngestRedactor(config: VaultConfig, options: { redact?: boolean } | undefined): Redactor | null {
+  if (options?.redact === false) {
+    return null;
+  }
+  return buildConfiguredRedactor(config.redaction);
+}
+
+async function attachIngestRedactor(rootDir: string, normalized: NormalizedIngestOptions): Promise<NormalizedIngestOptions> {
+  if (normalized.redactor !== undefined) {
+    return normalized;
+  }
+  const { config } = await loadVaultConfig(rootDir);
+  return { ...normalized, redactor: resolveIngestRedactor(config, normalized) };
 }
 
 async function resolveRepoIngestOptions(rootDir: string, options?: IngestOptions): Promise<NormalizedIngestOptions> {
@@ -842,7 +877,8 @@ async function resolveRepoIngestOptions(rootDir: string, options?: IngestOptions
   return {
     ...normalized,
     extractClasses: normalizeExtractClasses(repoAnalysis, normalized.extractClasses),
-    repoAnalysis
+    repoAnalysis,
+    redactor: resolveIngestRedactor(config, normalized)
   };
 }
 
@@ -1793,11 +1829,63 @@ function rewriteMarkdownImageTargets(content: string, replacements: Map<string, 
   });
 }
 
-async function persistPreparedInput(rootDir: string, prepared: PreparedInput, paths: ResolvedPaths): Promise<IngestPersistResult> {
+async function persistPreparedInput(
+  rootDir: string,
+  prepared: PreparedInput,
+  paths: ResolvedPaths,
+  redactor?: Redactor | null
+): Promise<IngestPersistResult> {
   await ensureDir(paths.rawSourcesDir);
   await ensureDir(paths.rawAssetsDir);
   await ensureDir(paths.manifestsDir);
   await ensureDir(paths.extractsDir);
+
+  // Apply redaction before any hashing or writes so the immutable `raw/`
+  // store, the extracts cache, and the content/semantic/extraction hashes
+  // all see the scrubbed text. Binary payloadBytes (pdf, image, docx, …)
+  // stay byte-identical; only their derived `extractedText` is redacted.
+  let redactionSummary: RedactionSummary | undefined;
+  if (redactor) {
+    const counts = new Map<string, number>();
+    let redactedPayload: Buffer | undefined;
+    if (isTextualSourceKindForPayload(prepared.sourceKind)) {
+      const payloadText = prepared.payloadBytes.toString("utf8");
+      const payloadResult = redactor.redact(payloadText);
+      for (const match of payloadResult.matches) {
+        counts.set(match.patternId, (counts.get(match.patternId) ?? 0) + match.count);
+      }
+      if (payloadResult.matches.length) {
+        redactedPayload = Buffer.from(payloadResult.text, "utf8");
+      }
+    }
+    let redactedExtractedText = prepared.extractedText;
+    if (prepared.extractedText) {
+      const extractedResult = redactor.redact(prepared.extractedText);
+      for (const match of extractedResult.matches) {
+        counts.set(match.patternId, (counts.get(match.patternId) ?? 0) + match.count);
+      }
+      if (extractedResult.matches.length) {
+        redactedExtractedText = extractedResult.text;
+      }
+    }
+    if (counts.size > 0) {
+      // Swap redacted values back onto prepared. Invalidate the caller's
+      // precomputed hashes so downstream hashing reflects the scrubbed text.
+      prepared = {
+        ...prepared,
+        payloadBytes: redactedPayload ?? prepared.payloadBytes,
+        extractedText: redactedExtractedText,
+        contentHash: undefined,
+        semanticHash: undefined,
+        extractionHash: undefined
+      };
+      redactionSummary = {
+        sourceId: "",
+        title: prepared.title,
+        matches: [...counts.entries()].map(([patternId, count]) => ({ patternId, count }))
+      };
+    }
+  }
 
   const attachments = prepared.attachments ?? [];
   const contentHash = prepared.contentHash ?? buildCompositeHash(prepared.payloadBytes, attachments);
@@ -1909,6 +1997,14 @@ async function persistPreparedInput(rootDir: string, prepared: PreparedInput, pa
     ...(prepared.logDetails ?? [])
   ]);
 
+  if (redactionSummary) {
+    redactionSummary.sourceId = sourceId;
+    await appendLogEntry(rootDir, "redact", prepared.title, [
+      `source_id=${sourceId}`,
+      ...redactionSummary.matches.map((entry) => `${entry.patternId}=${entry.count}`)
+    ]);
+  }
+
   if (manifest.originalPath || manifest.repoRelativePath || manifest.sourceId) {
     await clearPendingSemanticRefreshEntries(rootDir, {
       sourceId: manifest.sourceId,
@@ -1917,14 +2013,15 @@ async function persistPreparedInput(rootDir: string, prepared: PreparedInput, pa
     });
   }
 
-  return { manifest, isNew: !previous, wasUpdated: Boolean(previous) };
+  return { manifest, isNew: !previous, wasUpdated: Boolean(previous), redactions: redactionSummary };
 }
 
 async function persistPreparedInputs(
   rootDir: string,
   input: string,
   preparedInputs: PreparedInput[],
-  paths: ResolvedPaths
+  paths: ResolvedPaths,
+  redactor?: Redactor | null
 ): Promise<InputIngestResult> {
   const template = preparedInputs[0];
   const existingByOrigin = template ? await readManifestsByOrigin(paths.manifestsDir, template) : [];
@@ -1932,16 +2029,20 @@ async function persistPreparedInputs(
   const updated: SourceManifest[] = [];
   const unchanged: SourceManifest[] = [];
   const removed: SourceManifest[] = [];
+  const redactions: RedactionSummary[] = [];
   const seenSourceIds = new Set<string>();
 
   for (const prepared of preparedInputs) {
-    const result = await persistPreparedInput(rootDir, prepared, paths);
+    const result = await persistPreparedInput(rootDir, prepared, paths, redactor);
     if (result.isNew) {
       created.push(result.manifest);
     } else if (result.wasUpdated) {
       updated.push(result.manifest);
     } else {
       unchanged.push(result.manifest);
+    }
+    if (result.redactions) {
+      redactions.push(result.redactions);
     }
     seenSourceIds.add(result.manifest.sourceId);
   }
@@ -1961,7 +2062,8 @@ async function persistPreparedInputs(
     updated,
     unchanged,
     removed,
-    skipped: []
+    skipped: [],
+    redactions: redactions.length ? redactions : undefined
   };
 }
 
@@ -2119,7 +2221,7 @@ export async function syncTrackedRepos(rootDir: string, options?: IngestOptions,
         repoRoot,
         sourceClassForRelativePath(relativePath, normalizedOptions)
       );
-      const result = await persistPreparedInputs(rootDir, absolutePath, preparedInputs, paths);
+      const result = await persistPreparedInputs(rootDir, absolutePath, preparedInputs, paths, normalizedOptions.redactor);
       imported.push(...result.created);
       updated.push(...result.updated);
       removed.push(...result.removed);
@@ -2276,7 +2378,7 @@ export async function syncTrackedReposForWatch(
         continue;
       }
 
-      const result = await persistPreparedInputs(rootDir, absolutePath, preparedInputs, paths);
+      const result = await persistPreparedInputs(rootDir, absolutePath, preparedInputs, paths, normalizedOptions.redactor);
       imported.push(...result.created);
       updated.push(...result.updated);
       removed.push(...result.removed);
@@ -3100,7 +3202,7 @@ function isSupportedInboxKind(sourceKind: SourceManifest["sourceKind"]): boolean
 
 export async function ingestInputDetailed(rootDir: string, input: string, options?: IngestOptions): Promise<InputIngestResult> {
   const { paths } = await initWorkspace(rootDir);
-  const normalizedOptions = normalizeIngestOptions(options);
+  const normalizedOptions = await attachIngestRedactor(rootDir, normalizeIngestOptions(options));
   const absoluteInput = path.resolve(rootDir, input);
   const repoRoot =
     isHttpUrl(input) || normalizedOptions.repoRoot
@@ -3110,7 +3212,7 @@ export async function ingestInputDetailed(rootDir: string, input: string, option
     ? await prepareUrlInputs(rootDir, input, normalizedOptions)
     : await prepareFileInputs(rootDir, absoluteInput, repoRoot);
 
-  return await persistPreparedInputs(rootDir, input, prepared, paths);
+  return await persistPreparedInputs(rootDir, input, prepared, paths, normalizedOptions.redactor);
 }
 
 export async function ingestInput(rootDir: string, input: string, options?: IngestOptions): Promise<SourceManifest> {
@@ -3123,7 +3225,8 @@ export async function ingestInput(rootDir: string, input: string, options?: Inge
 }
 
 export async function addInput(rootDir: string, input: string, options: AddOptions = {}): Promise<AddResult> {
-  const { paths } = await initWorkspace(rootDir);
+  const { paths, config } = await initWorkspace(rootDir);
+  const redactor = resolveIngestRedactor(config, options);
   if (!isHttpUrl(input) && !arxivIdFromInput(input) && !doiFromInput(input)) {
     throw new Error("`swarmvault add` only supports URLs, bare arXiv ids, and bare DOI strings in the current release.");
   }
@@ -3203,7 +3306,7 @@ export async function addInput(rootDir: string, input: string, options: AddOptio
     };
   }
 
-  const result = await persistPreparedInput(rootDir, prepared, paths);
+  const result = await persistPreparedInput(rootDir, prepared, paths, redactor);
   return {
     captureType,
     manifest: result.manifest,
@@ -3234,7 +3337,7 @@ export async function ingestDirectory(rootDir: string, inputDir: string, options
       warnings: extracted.warnings,
       parts: extracted.conversations
     });
-    const result = await persistPreparedInputs(rootDir, absoluteInputDir, preparedInputs, paths);
+    const result = await persistPreparedInputs(rootDir, absoluteInputDir, preparedInputs, paths, normalizedOptions.redactor);
     await appendLogEntry(rootDir, "ingest_directory", toPosix(path.relative(rootDir, absoluteInputDir)) || ".", [
       `repo_root=${toPosix(path.relative(rootDir, repoRoot)) || "."}`,
       `scanned=${preparedInputs.length}`,
@@ -3248,7 +3351,8 @@ export async function ingestDirectory(rootDir: string, inputDir: string, options
       scannedCount: preparedInputs.length,
       imported: result.created,
       updated: result.updated,
-      skipped: result.skipped
+      skipped: result.skipped,
+      redactions: result.redactions
     };
   }
 
@@ -3266,6 +3370,7 @@ export async function ingestDirectory(rootDir: string, inputDir: string, options
   const updated: SourceManifest[] = [];
   const failed: DirectoryIngestFailure[] = [];
   const failedRecords: IngestRunStateFailure[] = [];
+  const redactions: RedactionSummary[] = [];
   const progress = createProgressReporter("ingest", files.length);
 
   for (const absolutePath of files) {
@@ -3288,9 +3393,10 @@ export async function ingestDirectory(rootDir: string, inputDir: string, options
     }
 
     try {
-      const result = await persistPreparedInputs(rootDir, absolutePath, preparedInputs, paths);
+      const result = await persistPreparedInputs(rootDir, absolutePath, preparedInputs, paths, normalizedOptions.redactor);
       if (result.created.length) imported.push(...result.created);
       if (result.updated.length) updated.push(...result.updated);
+      if (result.redactions?.length) redactions.push(...result.redactions);
       if (!result.created.length && !result.updated.length && !result.removed.length) {
         skipped.push({ path: relativeForLog, reason: "duplicate_content" });
       }
@@ -3335,12 +3441,14 @@ export async function ingestDirectory(rootDir: string, inputDir: string, options
     skipped,
     failed,
     runId,
-    statePath
+    statePath,
+    redactions: redactions.length ? redactions : undefined
   };
 }
 
 export async function importInbox(rootDir: string, inputDir?: string): Promise<InboxImportResult> {
-  const { paths } = await initWorkspace(rootDir);
+  const { paths, config } = await initWorkspace(rootDir);
+  const redactor = resolveIngestRedactor(config, undefined);
   const effectiveInputDir = path.resolve(rootDir, inputDir ?? paths.inboxDir);
   if (!(await fileExists(effectiveInputDir))) {
     throw new Error(`Inbox directory not found: ${effectiveInputDir}`);
@@ -3396,7 +3504,7 @@ export async function importInbox(rootDir: string, inputDir?: string): Promise<I
           ? await prepareInboxHtmlInput(absolutePath, refsBySource.get(absolutePath) ?? [])
           : await prepareFileInput(rootDir, absolutePath);
 
-    const result = await persistPreparedInputs(rootDir, absolutePath, [prepared], paths);
+    const result = await persistPreparedInputs(rootDir, absolutePath, [prepared], paths, redactor);
     if (!result.created.length) {
       skipped.push({ path: toPosix(path.relative(rootDir, absolutePath)), reason: "duplicate_content" });
       continue;

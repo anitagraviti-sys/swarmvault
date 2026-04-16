@@ -126,6 +126,21 @@ function isJson(): boolean {
   return activeCommand?.opts().json === true || program.opts().json === true;
 }
 
+function summarizeRedactions(
+  redactions?: Array<{ sourceId: string; title: string; matches: Array<{ count: number }> }>
+): string | undefined {
+  if (!redactions || redactions.length === 0) {
+    return undefined;
+  }
+  const totalMatches = redactions.reduce((total, entry) => total + entry.matches.reduce((sum, match) => sum + match.count, 0), 0);
+  if (totalMatches === 0) {
+    return undefined;
+  }
+  const secretsLabel = totalMatches === 1 ? "secret" : "secrets";
+  const sourceLabel = redactions.length === 1 ? "source" : "sources";
+  return `Redacted ${totalMatches} ${secretsLabel} across ${redactions.length} ${sourceLabel} (run --no-redact to disable).`;
+}
+
 function emitJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data)}\n`);
 }
@@ -304,6 +319,7 @@ program
   .option("--no-gitignore", "Ignore .gitignore rules when ingesting a directory")
   .option("--resume <run-id>", "Re-run only the failed files from a prior ingest run id")
   .option("--commit", "Auto-commit wiki and state changes after ingest")
+  .option("--no-redact", "Skip PII/secret redaction for this run (overrides config)")
   .action(
     async (
       input: string,
@@ -323,6 +339,7 @@ program
         guide?: boolean;
         answersFile?: string;
         commit?: boolean;
+        redact?: boolean;
       }
     ) => {
       const guideAnswers = readGuideAnswersFile(options.answersFile);
@@ -349,7 +366,8 @@ program
         maxFiles,
         gitignore: options.gitignore,
         extractClasses,
-        resume: options.resume
+        resume: options.resume,
+        redact: options.redact
       };
       const directoryResult = !/^https?:\/\//i.test(input)
         ? await import("node:fs/promises").then((fs) =>
@@ -431,6 +449,10 @@ program
           } else if (completedGuide?.guidePath) {
             log(`Staged guided session at ${completedGuide.guidePath}.`);
           }
+          const redactionLine = summarizeRedactions(directoryResult.redactions);
+          if (redactionLine) {
+            log(redactionLine);
+          }
         }
         if (options.commit) {
           const msg = await autoCommitWikiChanges(process.cwd(), "ingest", input, { force: true });
@@ -476,6 +498,10 @@ program
         } else if (completedGuide?.guidePath) {
           log(`Staged guided session at ${completedGuide.guidePath}.`);
         }
+        const redactionLine = summarizeRedactions(ingest.redactions);
+        if (redactionLine) {
+          log(redactionLine);
+        }
       }
       if (options.commit) {
         const msg = await autoCommitWikiChanges(process.cwd(), "ingest", input, { force: true });
@@ -490,10 +516,12 @@ program
   .argument("<input>", "Supported URL or bare arXiv id")
   .option("--author <name>", "Human author or curator for this capture")
   .option("--contributor <name>", "Additional contributor metadata for this capture")
-  .action(async (input: string, options: { author?: string; contributor?: string }) => {
+  .option("--no-redact", "Skip PII/secret redaction for this capture (overrides config)")
+  .action(async (input: string, options: { author?: string; contributor?: string; redact?: boolean }) => {
     const result = await addInput(process.cwd(), input, {
       author: options.author,
-      contributor: options.contributor
+      contributor: options.contributor,
+      redact: options.redact
     });
     if (isJson()) {
       emitJson(result);

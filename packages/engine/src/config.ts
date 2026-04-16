@@ -244,6 +244,24 @@ const vaultConfigSchema = z.object({
         })
         .optional()
     })
+    .optional(),
+  redaction: z
+    .object({
+      enabled: z.boolean().optional(),
+      placeholder: z.string().min(1).optional(),
+      useDefaults: z.boolean().optional(),
+      patterns: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            pattern: z.string().min(1),
+            flags: z.string().optional(),
+            placeholder: z.string().min(1).optional(),
+            description: z.string().optional()
+          })
+        )
+        .optional()
+    })
     .optional()
 });
 
