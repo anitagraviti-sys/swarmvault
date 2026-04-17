@@ -17,7 +17,14 @@ export {
   resolveDecayConfig,
   runDecayPass
 } from "./freshness.js";
-export { exportGraphFormat, exportGraphReportHtml, exportObsidianCanvas, exportObsidianVault } from "./graph-export.js";
+export type { SynthesizedHubEdge, SynthesizedHubNode, SynthesizedHyperedgeHubs } from "./graph-export.js";
+export {
+  exportGraphFormat,
+  exportGraphReportHtml,
+  exportObsidianCanvas,
+  exportObsidianVault,
+  synthesizeHyperedgeHubs
+} from "./graph-export.js";
 export { pushGraphNeo4j } from "./graph-push.js";
 export { blastRadius, graphDiff } from "./graph-tools.js";
 export { getGitHookStatus, installGitHooks, uninstallGitHooks } from "./hooks.js";

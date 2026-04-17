@@ -15,7 +15,8 @@ const { mockState, cytoscapeMock, resetMockState } = vi.hoisted(() => {
     destroy: vi.fn(),
     fit: vi.fn(),
     reset: vi.fn(),
-    off: vi.fn()
+    off: vi.fn(),
+    lastElements: [] as Array<{ data: Record<string, unknown>; classes?: string }>
   };
 
   const reset = () => {
@@ -27,6 +28,7 @@ const { mockState, cytoscapeMock, resetMockState } = vi.hoisted(() => {
     state.fit = vi.fn();
     state.reset = vi.fn();
     state.off = vi.fn();
+    state.lastElements = [];
   };
 
   const noopNodes = () => ({
@@ -37,37 +39,40 @@ const { mockState, cytoscapeMock, resetMockState } = vi.hoisted(() => {
   });
   const noopEdges = () => Object.assign([], { empty: () => true });
 
-  const cytoscape = vi.fn(() => ({
-    on(eventName: string, selectorOrHandler: string | CytoscapeHandler, handler?: CytoscapeHandler) {
-      const finalSelector = typeof selectorOrHandler === "string" ? selectorOrHandler : "*";
-      const finalHandler = typeof selectorOrHandler === "string" ? handler : selectorOrHandler;
-      if (!finalHandler) return;
-      const key = `${eventName}:${finalSelector}`;
-      const handlers = state.handlers.get(key) ?? [];
-      handlers.push(finalHandler);
-      state.handlers.set(key, handlers);
-    },
-    off: state.off,
-    getElementById(id: string) {
-      let addClass = state.addClassById.get(id);
-      if (!addClass) {
-        addClass = vi.fn();
-        state.addClassById.set(id, addClass);
-      }
-      return { addClass, empty: () => false, renderedPosition: () => ({ x: 0, y: 0 }), hasClass: () => false };
-    },
-    elements() {
-      return { removeClass: state.removeClass };
-    },
-    nodes: noopNodes,
-    edges: noopEdges,
-    extent: () => ({ x1: 0, y1: 0, x2: 0, y2: 0 }),
-    fit: state.fit,
-    reset: state.reset,
-    center: vi.fn(),
-    resize: state.resize,
-    destroy: state.destroy
-  }));
+  const cytoscape = vi.fn((config?: { elements?: Array<{ data: Record<string, unknown>; classes?: string }> }) => {
+    state.lastElements = config?.elements ? [...config.elements] : [];
+    return {
+      on(eventName: string, selectorOrHandler: string | CytoscapeHandler, handler?: CytoscapeHandler) {
+        const finalSelector = typeof selectorOrHandler === "string" ? selectorOrHandler : "*";
+        const finalHandler = typeof selectorOrHandler === "string" ? handler : selectorOrHandler;
+        if (!finalHandler) return;
+        const key = `${eventName}:${finalSelector}`;
+        const handlers = state.handlers.get(key) ?? [];
+        handlers.push(finalHandler);
+        state.handlers.set(key, handlers);
+      },
+      off: state.off,
+      getElementById(id: string) {
+        let addClass = state.addClassById.get(id);
+        if (!addClass) {
+          addClass = vi.fn();
+          state.addClassById.set(id, addClass);
+        }
+        return { addClass, empty: () => false, renderedPosition: () => ({ x: 0, y: 0 }), hasClass: () => false };
+      },
+      elements() {
+        return { removeClass: state.removeClass };
+      },
+      nodes: noopNodes,
+      edges: noopEdges,
+      extent: () => ({ x1: 0, y1: 0, x2: 0, y2: 0 }),
+      fit: state.fit,
+      reset: state.reset,
+      center: vi.fn(),
+      resize: state.resize,
+      destroy: state.destroy
+    };
+  });
 
   return {
     mockState: state,
@@ -109,6 +114,32 @@ function sampleGraph(): ViewerGraphArtifact {
     ],
     hyperedges: [],
     communities: [{ id: "community-1", label: "Community 1", nodeIds: ["node-1"] }]
+  };
+}
+
+function sampleGraphWithHyperedges(): ViewerGraphArtifact {
+  return {
+    generatedAt: new Date().toISOString(),
+    nodes: [
+      { id: "node-a", type: "concept", label: "A", sourceIds: [], projectIds: [], communityId: "c" },
+      { id: "node-b", type: "concept", label: "B", sourceIds: [], projectIds: [], communityId: "c" },
+      { id: "node-c", type: "entity", label: "C", sourceIds: [], projectIds: [], communityId: "c" }
+    ],
+    edges: [],
+    hyperedges: [
+      {
+        id: "group-1",
+        label: "Group",
+        relation: "participate_in",
+        nodeIds: ["node-a", "node-b", "node-c"],
+        evidenceClass: "inferred",
+        confidence: 0.7,
+        sourcePageIds: [],
+        why: "co-occur"
+      }
+    ],
+    communities: [{ id: "c", label: "C", nodeIds: ["node-a", "node-b", "node-c"] }],
+    pages: []
   };
 }
 
@@ -190,6 +221,123 @@ describe("GraphCanvas", () => {
     expect(onNodeSelect).toHaveBeenLastCalledWith(null);
 
     handle.cleanup();
+  });
+
+  it("synthesizes hub nodes and hub edges when hyperedges are present", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const cyRef = { current: null };
+    const graph = sampleGraphWithHyperedges();
+
+    act(() => {
+      root.render(
+        <GraphCanvas
+          graph={graph}
+          edgeStatusFilter="all"
+          communityFilter="all"
+          sourceClassFilter="all"
+          pathResult={null}
+          onNodeSelect={vi.fn()}
+          cyRef={cyRef}
+        />
+      );
+    });
+
+    const hubNodes = mockState.lastElements.filter((element) => element.classes === "hyper");
+    const hubEdges = mockState.lastElements.filter((element) => element.classes === "hyperEdge");
+    expect(hubNodes).toHaveLength(1);
+    expect(hubNodes[0].data.id).toBe("hyper:group-1");
+    expect(hubNodes[0].data.label).toBe("participate_in");
+    expect(hubEdges).toHaveLength(3);
+    // Hubs do not mutate the original graph payload — pages/nodes remain the
+    // source of truth and tag derivation stays unaffected.
+    expect(graph.nodes.map((node) => node.id)).toEqual(["node-a", "node-b", "node-c"]);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("removes hub nodes and hub edges when the Show hyperedges toggle is off", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const cyRef = { current: null };
+
+    act(() => {
+      root.render(
+        <GraphCanvas
+          graph={sampleGraphWithHyperedges()}
+          edgeStatusFilter="all"
+          communityFilter="all"
+          sourceClassFilter="all"
+          pathResult={null}
+          onNodeSelect={vi.fn()}
+          cyRef={cyRef}
+        />
+      );
+    });
+
+    // Baseline — hubs present.
+    expect(mockState.lastElements.some((element) => element.classes === "hyper")).toBe(true);
+
+    const toggle = container.querySelector('[data-testid="hyperedge-toggle"]') as HTMLInputElement | null;
+    expect(toggle).toBeTruthy();
+    act(() => {
+      toggle!.click();
+    });
+
+    expect(mockState.lastElements.some((element) => element.classes === "hyper")).toBe(false);
+    expect(mockState.lastElements.some((element) => element.classes === "hyperEdge")).toBe(false);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("does not emit synthetic hubs as graph pages that could leak into tag filters", () => {
+    // The filter sidebar derives tag options from `graph.pages`; hubs are
+    // a viewer-only render artifact and must never appear there. Verify the
+    // input graph still has no pages carrying a hub id after rendering.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const cyRef = { current: null };
+    const graph = sampleGraphWithHyperedges();
+
+    act(() => {
+      root.render(
+        <GraphCanvas
+          graph={graph}
+          edgeStatusFilter="all"
+          communityFilter="all"
+          sourceClassFilter="all"
+          pathResult={null}
+          onNodeSelect={vi.fn()}
+          cyRef={cyRef}
+        />
+      );
+    });
+
+    const hubNodes = mockState.lastElements.filter((element) => element.classes === "hyper");
+    expect(hubNodes.length).toBeGreaterThan(0);
+    const hubIds = new Set(hubNodes.map((hub) => hub.data.id));
+    // Real nodes never collide with hub ids.
+    for (const node of graph.nodes) {
+      expect(hubIds.has(node.id)).toBe(false);
+    }
+    // Pages (which feed the filter sidebar tag list) never contain hub ids.
+    for (const page of graph.pages ?? []) {
+      expect(hubIds.has(page.id)).toBe(false);
+    }
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   it("highlights path nodes and edges without relying on node size", () => {

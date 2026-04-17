@@ -4,6 +4,78 @@ import { GraphLegend } from "./GraphLegend";
 import { GraphMinimap } from "./GraphMinimap";
 import type { Core, ViewerGraphArtifact, ViewerGraphNode, ViewerGraphPathResult } from "./types";
 
+/**
+ * Synthesize one viewer-only "hub" node per group-pattern hyperedge, plus a
+ * short pairwise edge from the hub to every participant. Hubs are transient
+ * UI scaffolding — they are never written back to `state/graph.json` and
+ * they are filtered out of page/tag views elsewhere in the app. We mirror
+ * the engine's `synthesizeHyperedgeHubs` helper here instead of importing
+ * it so the viewer stays decoupled from Node-only engine code. Degenerate
+ * hyperedges (< 2 participants) are skipped because a hub with nothing to
+ * group is just visual noise.
+ */
+type HubNodeElement = {
+  data: {
+    id: string;
+    label: string;
+    hyperedgeId: string;
+    relation: string;
+    isHub: true;
+    color: string;
+  };
+  classes: string;
+};
+
+type HubEdgeElement = {
+  data: {
+    id: string;
+    source: string;
+    target: string;
+    relation: string;
+    hyperedgeId: string;
+    isHubEdge: true;
+  };
+  classes: string;
+};
+
+function buildHyperedgeHubElements(
+  graph: ViewerGraphArtifact,
+  visibleNodeIds: Set<string>
+): { hubNodes: HubNodeElement[]; hubEdges: HubEdgeElement[] } {
+  const hubNodes: HubNodeElement[] = [];
+  const hubEdges: HubEdgeElement[] = [];
+  for (const hyperedge of graph.hyperedges ?? []) {
+    const participants = hyperedge.nodeIds.filter((nodeId) => visibleNodeIds.has(nodeId));
+    if (participants.length < 2) continue;
+    const hubId = `hyper:${hyperedge.id}`;
+    hubNodes.push({
+      data: {
+        id: hubId,
+        label: hyperedge.relation,
+        hyperedgeId: hyperedge.id,
+        relation: hyperedge.relation,
+        isHub: true,
+        color: "#a78bfa"
+      },
+      classes: "hyper"
+    });
+    for (const participantId of participants) {
+      hubEdges.push({
+        data: {
+          id: `hyper-edge:${hyperedge.id}:${participantId}`,
+          source: hubId,
+          target: participantId,
+          relation: hyperedge.relation,
+          hyperedgeId: hyperedge.id,
+          isHubEdge: true
+        },
+        classes: "hyperEdge"
+      });
+    }
+  }
+  return { hubNodes, hubEdges };
+}
+
 declare global {
   interface Window {
     __SWARMVAULT_TEST__?: {
@@ -130,6 +202,9 @@ export function GraphCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [layout, setLayout] = useState<LayoutName>("cose");
   const [labelMode, setLabelMode] = useState<"auto" | "always" | "never">("auto");
+  // Hubs default to visible so group-pattern structure is obvious on first
+  // load; users who want a strictly one-node-per-page view can flip it off.
+  const [showHyperedges, setShowHyperedges] = useState<boolean>(true);
 
   const handleNodeSelect = useEffectEvent((node: ViewerGraphNode | null) => {
     onNodeSelect(node);
@@ -185,6 +260,11 @@ export function GraphCanvas({
     const labelStyle = labelMode === "always" ? "data(label)" : labelMode === "never" ? "" : "data(label)";
     const labelMinZoomed = labelMode === "always" ? 0 : labelMode === "never" ? 999 : 0.5;
 
+    // Hub synthesis is keyed off the post-filter node set so hubs only
+    // appear when >= 2 of their participants are actually on screen. When
+    // the toggle is off, hubs and their edges are dropped entirely.
+    const { hubNodes, hubEdges } = showHyperedges ? buildHyperedgeHubElements(graph, allowedNodeIds) : { hubNodes: [], hubEdges: [] };
+
     const cy = cytoscape({
       container: containerRef.current,
       elements: [
@@ -193,6 +273,7 @@ export function GraphCanvas({
           .map((node) => ({
             data: { ...node, color: COLORS[node.type] ?? "#94a3b8" }
           })),
+        ...hubNodes,
         ...graph.edges
           .filter((edge) => allowedNodeIds.has(edge.source) && allowedNodeIds.has(edge.target))
           .filter((edge) => edgeStatusFilter === "all" || edge.status === edgeStatusFilter)
@@ -205,7 +286,8 @@ export function GraphCanvas({
             ]
               .filter(Boolean)
               .join(" ")
-          }))
+          })),
+        ...hubEdges
       ],
       layout: LAYOUT_OPTIONS[layout],
       style: [
@@ -319,7 +401,36 @@ export function GraphCanvas({
           }
         },
         { selector: ":selected", style: { "border-width": 2, "border-color": "#e2e8f0" } },
-        { selector: "node:active", style: { "overlay-color": "#38bdf8", "overlay-opacity": 0.12 } }
+        { selector: "node:active", style: { "overlay-color": "#38bdf8", "overlay-opacity": 0.12 } },
+        {
+          selector: "node.hyper",
+          style: {
+            shape: "round-rectangle",
+            width: 18,
+            height: 14,
+            "background-color": "#0f172a",
+            "background-opacity": 0.85,
+            "border-width": 1.5,
+            "border-color": "#a78bfa",
+            "border-style": "dashed",
+            color: "#c4b5fd",
+            "font-size": 9,
+            "font-weight": "normal",
+            "text-max-width": "120px",
+            "z-index": 4
+          }
+        },
+        {
+          selector: "edge.hyperEdge",
+          style: {
+            width: 0.8,
+            "line-color": "rgba(167, 139, 250, 0.55)",
+            "line-style": "dashed",
+            "line-dash-pattern": [4, 3],
+            "target-arrow-shape": "none",
+            "curve-style": "straight"
+          }
+        }
       ]
     });
 
@@ -358,7 +469,7 @@ export function GraphCanvas({
       clearTestApi(cy, cyRef.current);
       clearGraphInstance(cy);
     };
-  }, [communityFilter, edgeStatusFilter, graph, sourceClassFilter, layout, labelMode, tagAllowedNodeIds, cyRef]);
+  }, [communityFilter, edgeStatusFilter, graph, sourceClassFilter, layout, labelMode, tagAllowedNodeIds, cyRef, showHyperedges]);
 
   useEffect(() => {
     applyPathHighlight(pathResult);
@@ -418,6 +529,19 @@ export function GraphCanvas({
             <option value="always">Always</option>
             <option value="never">Never</option>
           </select>
+        </div>
+        <div className="canvas-toolbar-group">
+          <label className="label" htmlFor="hyperedge-toggle">
+            <input
+              id="hyperedge-toggle"
+              type="checkbox"
+              data-testid="hyperedge-toggle"
+              aria-label="Show hyperedges"
+              checked={showHyperedges}
+              onChange={(event) => setShowHyperedges(event.target.checked)}
+            />{" "}
+            Show hyperedges
+          </label>
         </div>
         <div className="canvas-toolbar-group">
           <button type="button" className="btn" onClick={handleFit} title="Fit to viewport (F)">

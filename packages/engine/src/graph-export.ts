@@ -29,6 +29,103 @@ function loadVisNetworkJs(): string {
   return _visNetworkJs;
 }
 
+/**
+ * Viewer-only hub node synthesized from a group-pattern hyperedge. Hubs are
+ * never written back to `state/graph.json` — callers can treat them as
+ * transient UI scaffolding that turns a single `GraphHyperedge` into a tiny
+ * star of pairwise edges that Cytoscape (or vis.js) can render natively.
+ */
+export type SynthesizedHubNode = {
+  id: string;
+  hyperedgeId: string;
+  label: string;
+  relation: string;
+  participantIds: string[];
+  confidence: number;
+  evidenceClass: string;
+  why: string;
+};
+
+/**
+ * Viewer-only edge that connects a synthesized hub to one of the hyperedge
+ * participants. IDs are stable across renders so Cytoscape can reuse them and
+ * tests can assert their presence.
+ */
+export type SynthesizedHubEdge = {
+  id: string;
+  hyperedgeId: string;
+  source: string;
+  target: string;
+  relation: string;
+  confidence: number;
+  evidenceClass: string;
+};
+
+export type SynthesizedHyperedgeHubs = {
+  hubNodes: SynthesizedHubNode[];
+  hubEdges: SynthesizedHubEdge[];
+};
+
+type MinimalHyperedge = {
+  id: string;
+  label: string;
+  relation: string;
+  nodeIds: string[];
+  confidence?: number;
+  evidenceClass?: string;
+  why?: string;
+};
+
+type MinimalNode = { id: string };
+
+/**
+ * Turn every group-pattern hyperedge with `>= 2` participants into a star:
+ * one synthetic hub node plus a pairwise edge to each participant. Degenerate
+ * hyperedges (zero or one participant) are skipped because a hub with no
+ * "group" to anchor is noisy and contributes nothing to the layout. Nothing
+ * here mutates `state/graph.json`; the caller layers hubs on top of the real
+ * graph for rendering only.
+ */
+export function synthesizeHyperedgeHubs(
+  hyperedges: ReadonlyArray<MinimalHyperedge>,
+  nodes: ReadonlyArray<MinimalNode>
+): SynthesizedHyperedgeHubs {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const hubNodes: SynthesizedHubNode[] = [];
+  const hubEdges: SynthesizedHubEdge[] = [];
+
+  for (const hyperedge of hyperedges) {
+    const participantIds = hyperedge.nodeIds.filter((nodeId) => nodeIds.has(nodeId));
+    if (participantIds.length < 2) continue;
+
+    const hubId = `hyper:${hyperedge.id}`;
+    hubNodes.push({
+      id: hubId,
+      hyperedgeId: hyperedge.id,
+      label: hyperedge.relation,
+      relation: hyperedge.relation,
+      participantIds,
+      confidence: hyperedge.confidence ?? 0,
+      evidenceClass: hyperedge.evidenceClass ?? "inferred",
+      why: hyperedge.why ?? ""
+    });
+
+    for (const participantId of participantIds) {
+      hubEdges.push({
+        id: `hyper-edge:${hyperedge.id}:${participantId}`,
+        hyperedgeId: hyperedge.id,
+        source: hubId,
+        target: participantId,
+        relation: hyperedge.relation,
+        confidence: hyperedge.confidence ?? 0,
+        evidenceClass: hyperedge.evidenceClass ?? "inferred"
+      });
+    }
+  }
+
+  return { hubNodes, hubEdges };
+}
+
 function hexToObsidianColor(hex: string): { a: number; rgb: number } {
   return { a: 1, rgb: Number.parseInt(hex.replace("#", ""), 16) };
 }
@@ -505,9 +602,36 @@ function renderHtmlStandalone(graph: GraphArtifact): string {
     nodeIds: c.nodeIds
   }));
 
+  // Synthesize viewer-only hub nodes + pairwise edges for every group-pattern
+  // hyperedge whose participants survived the degree cap. Hubs are marked
+  // with `isHub: true` / `isHubEdge: true` so the inline JS can style them
+  // distinctly (dashed, secondary color) and never feed them into the
+  // degree-based size calc.
+  const { hubNodes, hubEdges } = synthesizeHyperedgeHubs(graph.hyperedges ?? [], cappedNodes);
+  const hubNodesData = hubNodes.map((hub) => ({
+    id: hub.id,
+    label: hub.label,
+    type: "hyperedge",
+    isHub: true,
+    hyperedgeId: hub.hyperedgeId,
+    relation: hub.relation,
+    confidence: hub.confidence,
+    evidenceClass: hub.evidenceClass
+  }));
+  const hubEdgesData = hubEdges.map((edge) => ({
+    id: edge.id,
+    from: edge.source,
+    to: edge.target,
+    relation: edge.relation,
+    evidenceClass: edge.evidenceClass,
+    confidence: edge.confidence,
+    isHubEdge: true,
+    hyperedgeId: edge.hyperedgeId
+  }));
+
   const graphJson = JSON.stringify({
-    nodes: nodesData,
-    edges: edgesData,
+    nodes: [...nodesData, ...hubNodesData],
+    edges: [...edgesData, ...hubEdgesData],
     communities: communitiesData
   });
 
@@ -579,6 +703,22 @@ function renderHtmlStandalone(graph: GraphArtifact): string {
     GRAPH_DATA.nodes.forEach(function(n) { nodeMap[n.id] = n; });
 
     var visNodes = new vis.DataSet(GRAPH_DATA.nodes.map(function(n) {
+      if (n.isHub) {
+        // Hub nodes are viewer-only scaffolding — keep them small, dashed,
+        // and painted with a secondary accent so they read as grouping
+        // glue rather than first-class entities.
+        return {
+          id: n.id,
+          label: n.label,
+          shape: "dot",
+          color: { background: "#0f172a", border: "#a78bfa" },
+          size: 10,
+          font: { color: "#c4b5fd", size: 10 },
+          borderWidth: 2,
+          borderWidthSelected: 3,
+          shapeProperties: { borderDashes: [4, 3] }
+        };
+      }
       var size = 8 + Math.min(32, n.degree * 2);
       return {
         id: n.id,
@@ -591,6 +731,17 @@ function renderHtmlStandalone(graph: GraphArtifact): string {
     }));
 
     var visEdges = new vis.DataSet(GRAPH_DATA.edges.map(function(e) {
+      if (e.isHubEdge) {
+        return {
+          id: e.id,
+          from: e.from,
+          to: e.to,
+          color: { color: "#a78bfa", opacity: 0.5 },
+          width: 1,
+          dashes: [4, 3],
+          arrows: { to: { enabled: false } }
+        };
+      }
       var dashed = (e.evidenceClass === "inferred" || e.evidenceClass === "ambiguous");
       return {
         id: e.id,
