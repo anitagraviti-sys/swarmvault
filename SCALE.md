@@ -52,10 +52,10 @@ You are outside SwarmVault's tested envelope. Options in order of effort:
 
 ## Recorded measurements
 
-The `check:perf` lane (`pnpm check:perf`) records micro-benchmarks for three tight paths:
+The `check:perf` lane (`pnpm check:perf`) measures three tight paths against absolute budgets:
 
 - `computeDecayScore:10k` — per-page decay math at compile time.
 - `resolveLargeRepoDefaults:100k` — graph-default resolution called per compile.
 - `redact:20KB-prose` — ingest-time redaction over a typical note-sized buffer.
 
-Baselines live in `scripts/perf-baselines.json` and are enforced with a ±35 % tolerance in CI. Update the baselines deliberately with `pnpm check:perf:record` after confirming a change is intentional, and note the reason in the commit message.
+Budgets live in `scripts/perf-budgets.json` and are sized with generous headroom over both local and CI measurements, so environment noise never breaks the build — only real order-of-magnitude regressions do. Update a budget deliberately in a commit whose message explains why.

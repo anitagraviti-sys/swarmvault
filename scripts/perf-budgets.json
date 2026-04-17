@@ -1,0 +1,14 @@
+{
+  "computeDecayScore:10k": {
+    "maxMedianMs": 15,
+    "reason": "10k per-page decay calls at compile time. CI median ~3ms, local ~1ms. 15ms budget keeps a 5x CI headroom while still catching real regressions."
+  },
+  "resolveLargeRepoDefaults:100k": {
+    "maxMedianMs": 150,
+    "reason": "100k large-repo-default resolutions. CI median ~40ms, local ~12ms. 150ms budget keeps a ~4x CI headroom."
+  },
+  "redact:20KB-prose": {
+    "maxMedianMs": 5,
+    "reason": "Ingest-time redaction over a 20KB prose buffer. CI median ~0.03ms; variance at this scale is noise. 5ms budget catches order-of-magnitude regressions only."
+  }
+}

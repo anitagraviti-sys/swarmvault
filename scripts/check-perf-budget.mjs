@@ -3,12 +3,13 @@
  * Performance regression lane for SwarmVault.
  *
  * Measures a small set of tight operations against a deterministic in-memory
- * workload, compares against recorded baselines in `scripts/perf-baselines.json`,
- * and fails the build if any measurement exceeds `baseline * (1 + tolerance)`.
+ * workload, compares each median against an absolute budget recorded in
+ * `scripts/perf-budgets.json`, and fails the build if any median exceeds it.
  *
- * Update the baselines on purpose by running `node ./scripts/check-perf-budget.mjs --record`.
- * Never update them silently — a regression hiding in a baseline bump is worse
- * than a red CI.
+ * Budgets are hand-maintained and sized with generous headroom over both
+ * local and CI measurements so environment noise never breaks the build —
+ * only real order-of-magnitude regressions do. Update budgets deliberately
+ * in a commit whose message explains the reason.
  */
 
 import fs from "node:fs/promises";
@@ -18,39 +19,20 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
-const baselinesPath = path.join(scriptDir, "perf-baselines.json");
-const DEFAULT_TOLERANCE = 0.35;
+const budgetsPath = path.join(scriptDir, "perf-budgets.json");
 
 function parseArgs(argv) {
-  const args = { record: false, tolerance: DEFAULT_TOLERANCE, json: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === "--record") args.record = true;
-    else if (token === "--json") args.json = true;
-    else if (token === "--tolerance") {
-      args.tolerance = Number.parseFloat(argv[index + 1]);
-      index += 1;
-    } else {
-      throw new Error(`Unknown argument: ${token}`);
-    }
-  }
-  if (!Number.isFinite(args.tolerance) || args.tolerance < 0) {
-    throw new Error(`--tolerance must be a non-negative number, got ${args.tolerance}`);
+  const args = { json: false };
+  for (const token of argv) {
+    if (token === "--json") args.json = true;
+    else throw new Error(`Unknown argument: ${token}`);
   }
   return args;
 }
 
-async function loadBaselines() {
-  try {
-    const raw = await fs.readFile(baselinesPath, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-async function writeBaselines(baselines) {
-  await fs.writeFile(baselinesPath, `${JSON.stringify(baselines, null, 2)}\n`, "utf8");
+async function loadBudgets() {
+  const raw = await fs.readFile(budgetsPath, "utf8");
+  return JSON.parse(raw);
 }
 
 async function time(label, fn, iterations = 1) {
@@ -86,7 +68,6 @@ async function runBenchmarks() {
   const engine = await importEngine();
   const measurements = [];
 
-  // Decay math — large-batch scoring — should stay hot on cached inputs.
   const now = Date.now();
   const lastConfirmed = new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString();
   const config = engine.resolveDecayConfig({});
@@ -104,7 +85,6 @@ async function runBenchmarks() {
     )
   );
 
-  // Large-repo default resolution — cheap but called per compile.
   measurements.push(
     await time(
       "resolveLargeRepoDefaults:100k",
@@ -117,7 +97,6 @@ async function runBenchmarks() {
     )
   );
 
-  // Redaction on a 20 KB buffer of mixed prose — this is the per-source ingest hot path.
   const redactor = engine.buildRedactor(engine.DEFAULT_REDACTION_PATTERNS, "[REDACTED]");
   const proseChunk = "The quick brown fox jumps over the lazy dog. ".repeat(400);
   measurements.push(
@@ -141,39 +120,23 @@ function formatMs(value) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const measurements = await runBenchmarks();
-  const baselines = await loadBaselines();
+  const budgets = await loadBudgets();
   const report = measurements.map((measurement) => {
-    const baseline = baselines[measurement.label]?.medianMs;
-    const limit = baseline ? baseline * (1 + args.tolerance) : null;
-    const regressed = baseline !== undefined && measurement.medianMs > limit;
-    return { ...measurement, baselineMs: baseline, limitMs: limit, regressed };
+    const budget = budgets[measurement.label];
+    const limitMs = budget?.maxMedianMs;
+    const regressed = typeof limitMs === "number" && measurement.medianMs > limitMs;
+    const unbudgeted = limitMs === undefined;
+    return { ...measurement, limitMs: limitMs ?? null, regressed, unbudgeted };
   });
 
-  if (args.record) {
-    const next = {};
-    for (const entry of measurements) {
-      next[entry.label] = { medianMs: Number(entry.medianMs.toFixed(3)), recordedAt: new Date().toISOString() };
-    }
-    await writeBaselines(next);
-    if (!args.json) {
-      console.log("[perf] recorded new baselines:");
-      for (const entry of measurements) {
-        console.log(`  ${entry.label} median=${formatMs(entry.medianMs)}`);
-      }
-    } else {
-      console.log(JSON.stringify({ action: "record", measurements: next }, null, 2));
-    }
-    return;
-  }
-
   if (args.json) {
-    console.log(JSON.stringify({ tolerance: args.tolerance, report }, null, 2));
+    console.log(JSON.stringify({ report }, null, 2));
   } else {
     for (const entry of report) {
-      const baselineLabel = entry.baselineMs === undefined ? "no-baseline" : formatMs(entry.baselineMs);
-      const verdict = entry.regressed ? "REGRESSED" : entry.baselineMs === undefined ? "NEW" : "ok";
+      const budgetLabel = entry.limitMs === null ? "no-budget" : `≤${formatMs(entry.limitMs)}`;
+      const verdict = entry.regressed ? "REGRESSED" : entry.unbudgeted ? "UNBUDGETED" : "ok";
       console.log(
-        `[perf] ${entry.label}: median=${formatMs(entry.medianMs)} min=${formatMs(entry.minMs)} max=${formatMs(entry.maxMs)} baseline=${baselineLabel} ${verdict}`
+        `[perf] ${entry.label}: median=${formatMs(entry.medianMs)} min=${formatMs(entry.minMs)} max=${formatMs(entry.maxMs)} budget=${budgetLabel} ${verdict}`
       );
     }
   }
@@ -181,16 +144,18 @@ async function main() {
   const regressed = report.filter((entry) => entry.regressed);
   if (regressed.length > 0) {
     const lines = regressed.map(
-      (entry) => `  ${entry.label}: ${formatMs(entry.medianMs)} > ${formatMs(entry.limitMs ?? 0)} (baseline ${formatMs(entry.baselineMs ?? 0)})`
+      (entry) => `  ${entry.label}: ${formatMs(entry.medianMs)} > ${formatMs(entry.limitMs ?? 0)}`
     );
-    console.error(`[perf] regression budget exceeded for ${regressed.length} metric(s):\n${lines.join("\n")}`);
-    console.error("[perf] run `node ./scripts/check-perf-budget.mjs --record` after confirming the new numbers are intentional.");
+    console.error(`[perf] budget exceeded for ${regressed.length} metric(s):\n${lines.join("\n")}`);
+    console.error(
+      "[perf] update scripts/perf-budgets.json after confirming the new number is intentional, with a commit message explaining why."
+    );
     process.exit(1);
   }
 
-  const missing = report.filter((entry) => entry.baselineMs === undefined);
-  if (missing.length > 0) {
-    console.warn(`[perf] ${missing.length} metric(s) have no baseline — record them with --record once the numbers are stable.`);
+  const unbudgeted = report.filter((entry) => entry.unbudgeted);
+  if (unbudgeted.length > 0) {
+    console.warn(`[perf] ${unbudgeted.length} metric(s) have no budget in scripts/perf-budgets.json.`);
   }
 }
 
