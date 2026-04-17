@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Added a local-Whisper audio provider — `providers.<id>.type = "local-whisper"` shells out to a user-installed `whisper.cpp` binary and exposes the `audio` capability only, so voice memos, meetings, and arbitrary `.wav`/`.mp3`/`.m4a`/`.flac`/`.ogg`/`.webm` files transcribe end-to-end with no API keys and no network traffic; binary discovery falls back through `localWhisper.binaryPath`, `SWARMVAULT_WHISPER_BINARY`, and `$PATH` lookups for `whisper-cli` / `whisper-cpp` / `whisper`, and the configurable `model`, `binaryPath`, `modelPath`, `extraArgs`, and `threads` fields on the provider entry are forwarded through to the binary; the provider is documented as **experimental** in `STABILITY.md`
+- Added `swarmvault provider setup --local-whisper` — an interactive subcommand that reports whisper.cpp binary status, downloads the configured ggml model (`base.en` by default, `--model {tiny.en,small.en,medium.en,large-v3}` to switch tiers) from the canonical `ggerganov/whisper.cpp` Hugging Face mirror into `~/.swarmvault/models/`, and registers the provider in `swarmvault.config.json` (setting `tasks.audioProvider = "local-whisper"` when no audio provider was previously configured, or leaving an existing assignment alone unless `--set-audio-provider` is passed); `--apply` skips prompts for CI / scripted installs, and `--json` emits a structured status without prompting or downloading
+- Audio sources are now accepted through the inbox importer alongside the existing document and image kinds — drop a voice memo into `raw/inbox/` (or a watched root) and the watcher, inbox scanner, and `swarmvault add` all route it through the configured audio provider; transcribed text flows through the same ingest-time redactor as every other derived text, so secrets spoken aloud in a meeting are scrubbed before they reach `raw/` or `wiki/`
+
 ## 1.0.1
 
 - Replaced the environment-sensitive perf baselines in `pnpm check:perf` with absolute budgets in `scripts/perf-budgets.json`. Each metric carries a rationale inline so future bumps document intent, and the lane no longer fails on CI hardware that is 3x-4x slower than a development laptop. No runtime or published package behavior changes — this is a CI infrastructure fix plus a matching paragraph in `SCALE.md`.
