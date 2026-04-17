@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0
+
+**Stability lock.**
+
+
+- Promotes the 0.12.0 surface to the 1.0.0 semver baseline with no new features. Every CLI subcommand, config key, MCP tool, frontmatter field, graph artifact field, and state file listed as Stable in [STABILITY.md](STABILITY.md) is now covered by the semver promise: breaking changes require a major version bump. Experimental surfaces remain opt-in and may change in any minor release.
+- Publishes the deprecation policy — a minimum two-minor grace window with runtime lint warnings and a matching `swarmvault migrate` step before any stable surface is removed.
+- `swarmvault migrate` reaches 1.0.0 with shipped steps for upgrading 0.9 and 0.10 vaults to the current schema (decay_score, last_confirmed_at, tier, tags) plus a stale-search-index clearer; the verified end-to-end flow upgrades a fixture 0.9-era vault cleanly and writes `state/vault-version.json`.
+- Documents the tested operating envelope in [SCALE.md](SCALE.md) and the 1.0 PDF extraction choice in [docs/pdf-extraction.md](docs/pdf-extraction.md).
+
 ## 0.12.0
 
 - Added `swarmvault migrate [--target <version>] [--apply] [--dry-run]` for vault schema/config/graph upgrades — detects the current vault version via `state/vault-version.json` (and falls back to `state/graph.json` metadata), plans named migration steps, applies them idempotently, and exposes the same plan over MCP via the new `migrate` tool; shipped migrations cover adding `decay_score` / `last_confirmed_at` / `tier` / `tags` to legacy pages and clearing the stale search index so compile regenerates it
