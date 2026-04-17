@@ -45,6 +45,12 @@ export { LARGE_REPO_NODE_THRESHOLD, resolveLargeRepoDefaults } from "./large-rep
 export { createMcpServer, startMcpServer } from "./mcp.js";
 export type { MigrationPlan, MigrationResult, MigrationStep, VaultVersionRecord } from "./migrate.js";
 export { ALL_MIGRATIONS, detectVaultVersion, planMigration, runMigration } from "./migrate.js";
+export type { DegradationOutcome, OpenAiCompatiblePresetId, ProviderPresetCapability } from "./providers/openai-compatible-capabilities.js";
+export {
+  lookupPresetCapabilities,
+  OPENAI_COMPATIBLE_CAPABILITY_MATRIX,
+  withCapabilityFallback
+} from "./providers/openai-compatible-capabilities.js";
 export { assertProviderCapability, createProvider, getProviderForTask } from "./providers/registry.js";
 export { buildConfiguredRedactor, buildRedactor, DEFAULT_REDACTION_PATTERNS, resolveRedactionPatterns } from "./redaction.js";
 export { listSchedules, runSchedule, serveSchedules } from "./schedule.js";
