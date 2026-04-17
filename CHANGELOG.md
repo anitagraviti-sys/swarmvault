@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0
+
+- Added `swarmvault migrate [--target <version>] [--apply] [--dry-run]` for vault schema/config/graph upgrades — detects the current vault version via `state/vault-version.json` (and falls back to `state/graph.json` metadata), plans named migration steps, applies them idempotently, and exposes the same plan over MCP via the new `migrate` tool; shipped migrations cover adding `decay_score` / `last_confirmed_at` / `tier` / `tags` to legacy pages and clearing the stale search index so compile regenerates it
+- Published the first `STABILITY.md` contract documenting every stable CLI subcommand, config key, MCP tool, frontmatter field, graph artifact field, and state file covered by the semver promise, plus the deprecation policy (minimum two-minor grace window, runtime lint warnings, `swarmvault migrate` shipping alongside removals); linked from the EN/ZH/JA READMEs
+- Added a performance regression CI lane — `pnpm check:perf` runs three tight benchmarks (`computeDecayScore`, `resolveLargeRepoDefaults`, `redact`) against recorded baselines in `scripts/perf-baselines.json` with a ±35% tolerance; a new `perf-budget` GitHub Actions job fails the build on regressions and `pnpm check:perf:record` updates baselines deliberately
+- Added the OpenAI-compatible provider capability matrix — `OPENAI_COMPATIBLE_CAPABILITY_MATRIX` records the canonical capability set, API style, and notes for every OpenAI-family preset (openai, openai-compatible, openrouter, groq, together, xai, cerebras, ollama); the new `withCapabilityFallback` helper runs a primary path when the capability is advertised and returns a caller-supplied fallback with an explicit `unsupported` reason otherwise, so structured-output and multimodal calls degrade safely instead of failing at runtime
+- Published `SCALE.md` documenting the tested operating envelope (small up to 500 sources, medium up to 5k, large up to 50k), what degrades past each tier (SQLite FTS, compile memory, similarity density, viewer interactivity, audio transcription cost), which config knobs to turn, how to benchmark your own vault, and the options once you exceed the large tier
+- Published `docs/pdf-extraction.md` explaining the 1.0 PDF choice — `pdf-parse` / `pdf.js` as the deterministic no-dependency default — its known limitations on tables, scanned PDFs, multi-column layouts, and embedded images, and how to opt into richer extraction via the experimental vision path or a custom provider module
+
 ## 0.11.0
 
 - Added explicit watched-root controls — `swarmvault watch --root <path>` (repeatable) overrides the auto-discovered list for a single run; `swarmvault watch list-roots`, `swarmvault watch add-root <path>`, and `swarmvault watch remove-root <path>` persist a curated list under `watch.repoRoots` in `swarmvault.config.json`, with an optional `watch.excludeRepoRoots` deny list; existing 0.9.0/0.10.0 configs keep auto-discovery behavior with no regression
