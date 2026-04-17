@@ -488,6 +488,8 @@ pnpm build
 
 PR のガイドラインは [CONTRIBUTING.md](CONTRIBUTING.md)、公開パッケージの検証フローは [docs/live-testing.md](docs/live-testing.md) を参照してください。
 
+公開 API コントラクト、semver の約束、廃止ポリシーは [STABILITY.md](STABILITY.md) を参照してください。1.0.0 リリース後、Stable な面はセマンティックバージョニングに従い、Experimental な面はマイナーリリースで変更される可能性があります。
+
 <!-- readme-section:links -->
 ## リンク
 

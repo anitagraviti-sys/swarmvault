@@ -486,6 +486,8 @@ pnpm build
 
 PR 指南见 [CONTRIBUTING.md](CONTRIBUTING.md)，已发布包验证流程见 [docs/live-testing.md](docs/live-testing.md)。
 
+公开 API 契约、语义化版本承诺与弃用政策见 [STABILITY.md](STABILITY.md)。1.0.0 发布后，Stable 表面遵循语义化版本；Experimental 表面可能在任意次版本中变更。
+
 <!-- readme-section:links -->
 ## 链接
 
