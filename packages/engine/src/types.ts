@@ -1797,6 +1797,36 @@ export interface GraphReportArtifact {
   };
 }
 
+export interface GraphShareArtifact {
+  generatedAt: string;
+  vaultName: string;
+  tagline: string;
+  overview: {
+    sources: number;
+    nodes: number;
+    edges: number;
+    pages: number;
+    communities: number;
+  };
+  firstPartyOverview: {
+    nodes: number;
+    edges: number;
+    pages: number;
+    communities: number;
+  };
+  highlights: {
+    topHubs: Array<{ nodeId: string; label: string; degree?: number }>;
+    bridgeNodes: Array<{ nodeId: string; label: string; bridgeScore?: number }>;
+    surprisingConnections: Array<{ sourceLabel: string; targetLabel: string; relation: string; why: string }>;
+    suggestedQuestions: string[];
+  };
+  knowledgeGaps: string[];
+  shortPost: string;
+  relatedNodeIds: string[];
+  relatedPageIds: string[];
+  relatedSourceIds: string[];
+}
+
 export interface ScheduledCompileTask {
   type: "compile";
   approve?: boolean;

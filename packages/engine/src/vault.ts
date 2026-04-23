@@ -46,6 +46,7 @@ import {
   buildExploreHubPage,
   buildGraphReportArtifact,
   buildGraphReportPage,
+  buildGraphSharePage,
   buildIndexPage,
   buildModulePage,
   buildOutputPage,
@@ -2524,9 +2525,25 @@ async function buildGraphOrientationPages(
         report
       })
   );
+  const shareRecord = await buildManagedGraphPage(
+    path.join(paths.wikiDir, "graph", "share-card.md"),
+    {
+      managedBy: "system",
+      compiledFrom: uniqueStrings(graph.pages.flatMap((page) => page.sourceIds)),
+      confidence: 1
+    },
+    (metadata) =>
+      buildGraphSharePage({
+        graph,
+        schemaHash,
+        metadata,
+        report,
+        vaultName: path.basename(paths.rootDir)
+      })
+  );
 
   return {
-    records: [reportRecord, ...communityRecords],
+    records: [reportRecord, shareRecord, ...communityRecords],
     report
   };
 }

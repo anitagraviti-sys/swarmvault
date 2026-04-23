@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Added `swarmvault graph share [--post]` for post-ready graph summaries — the command reads the compiled graph/report artifacts, prints the same markdown shape written to `wiki/graph/share-card.md`, emits only the compact copyable text with `--post`, and preserves structured output under `--json` for scripts and agents
+- Compile, `swarmvault scan`, and `swarmvault demo` now surface `wiki/graph/share-card.md` as a first-run artifact, with source/page/node/edge/community counts, top hubs, bridge nodes, surprising connections, suggested next questions, knowledge gaps, and reproducible install/run instructions
+- Graph viewer node selection now clears explicitly when the canvas background is tapped, which makes the live viewer behavior and installed-package browser smoke more deterministic
+- Kept release preflight focused on installed SwarmVault artifacts by making the Codex host-agent smoke explicit opt-in via `SWARMVAULT_RUN_CODEX_AGENT_SMOKE=1`, matching the existing opt-in behavior for other external model-dependent host checks, and by having browser validation wait on rendered graph hooks instead of `networkidle` or coordinate-sensitive canvas clicks
+- Refreshed the OSS README trio, package docs, ClawHub skill bundle, website docs, and product `spec.md` around the share-card loop so a new user can scan a repo, copy a concise public update, and then open the richer graph/report workflow without extra setup
+
 ## 1.1.0
 
 - Added a local-Whisper audio provider — `providers.<id>.type = "local-whisper"` shells out to a user-installed `whisper.cpp` binary and exposes the `audio` capability only, so voice memos, meetings, and arbitrary `.wav`/`.mp3`/`.m4a`/`.flac`/`.ogg`/`.webm` files transcribe end-to-end with no API keys and no network traffic; binary discovery falls back through `localWhisper.binaryPath`, `SWARMVAULT_WHISPER_BINARY`, and `$PATH` lookups for `whisper-cli` / `whisper-cpp` / `whisper`, and the configurable `model`, `binaryPath`, `modelPath`, `extraArgs`, and `threads` fields on the provider entry are forwarded through to the binary; the provider is documented as **experimental** in `STABILITY.md`

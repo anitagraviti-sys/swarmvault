@@ -56,7 +56,7 @@ Then verify:
 - `wiki/dashboards/source-guides.md`
 - `state/approvals/`
 
-## `wiki/graph/report.md` or search artifacts are missing
+## `wiki/graph/report.md`, share card, or search artifacts are missing
 
 Run:
 
@@ -67,6 +67,7 @@ swarmvault compile
 Then verify:
 
 - `wiki/graph/report.md`
+- `wiki/graph/share-card.md`
 - `state/graph.json`
 - `state/search.sqlite`
 

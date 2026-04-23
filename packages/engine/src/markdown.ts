@@ -2,6 +2,7 @@ import matter from "gray-matter";
 import { modulePageTitle } from "./code-analysis.js";
 import { filterGraphBySourceClass, sourceClassBreakdown } from "./embeddings.js";
 import { describeSimilarityReasons } from "./graph-enrichment.js";
+import { buildGraphShareArtifact, renderGraphShareMarkdown } from "./graph-share.js";
 import { shortestGraphPath } from "./graph-tools.js";
 import { resolveLargeRepoDefaults } from "./large-repo-defaults.js";
 import { ALL_SOURCE_CLASSES } from "./source-classification.js";
@@ -1546,6 +1547,73 @@ export function buildGraphReportPage(input: {
       managedBy: input.metadata.managedBy
     },
     content: matter.stringify(body, frontmatter)
+  };
+}
+
+export function buildGraphSharePage(input: {
+  graph: GraphArtifact;
+  schemaHash: string;
+  metadata: ManagedGraphPageMetadata;
+  report: GraphReportArtifact;
+  vaultName?: string;
+}): GraphPageRecord {
+  const pageId = "graph:share-card";
+  const pathValue = "graph/share-card.md";
+  const artifact = buildGraphShareArtifact({
+    graph: input.graph,
+    report: input.report,
+    vaultName: input.vaultName
+  });
+  const frontmatter = {
+    page_id: pageId,
+    kind: "graph_report",
+    cssclasses: cssclassesFor("graph_report"),
+    title: "Share Card",
+    tags: ["graph", "share"],
+    source_ids: artifact.relatedSourceIds,
+    project_ids: [],
+    node_ids: artifact.relatedNodeIds,
+    freshness: "fresh" satisfies Freshness,
+    status: input.metadata.status,
+    confidence: input.metadata.confidence,
+    created_at: input.metadata.createdAt,
+    updated_at: input.metadata.updatedAt,
+    compiled_from: input.metadata.compiledFrom,
+    managed_by: input.metadata.managedBy,
+    backlinks: [],
+    schema_hash: input.schemaHash,
+    source_hashes: {},
+    source_semantic_hashes: {},
+    related_page_ids: artifact.relatedPageIds,
+    related_node_ids: artifact.relatedNodeIds,
+    related_source_ids: artifact.relatedSourceIds
+  };
+
+  return {
+    page: {
+      id: pageId,
+      path: pathValue,
+      title: "Share Card",
+      kind: "graph_report",
+      sourceIds: artifact.relatedSourceIds,
+      projectIds: [],
+      nodeIds: artifact.relatedNodeIds,
+      freshness: "fresh",
+      status: input.metadata.status,
+      confidence: input.metadata.confidence,
+      backlinks: [],
+      schemaHash: input.schemaHash,
+      sourceHashes: {},
+      sourceSemanticHashes: {},
+      relatedPageIds: artifact.relatedPageIds,
+      relatedNodeIds: artifact.relatedNodeIds,
+      relatedSourceIds: artifact.relatedSourceIds,
+      createdAt: input.metadata.createdAt,
+      updatedAt: input.metadata.updatedAt,
+      compiledFrom: input.metadata.compiledFrom,
+      managedBy: input.metadata.managedBy
+    },
+    content: matter.stringify(renderGraphShareMarkdown(artifact), frontmatter)
   };
 }
 

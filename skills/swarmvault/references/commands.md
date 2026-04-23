@@ -55,6 +55,7 @@ swarmvault candidate list
 ```bash
 swarmvault graph serve
 swarmvault graph serve --full
+swarmvault graph share --post
 swarmvault graph blast ./src/index.ts
 swarmvault graph export --html ./graph.html
 swarmvault graph export --report ./graph-report.html

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import type { GraphArtifact, GuidedSourceSessionQuestion, SourceClass } from "@swarmvaultai/engine";
@@ -13,6 +14,7 @@ import {
   autoCommitWikiChanges,
   benchmarkVault,
   blastRadiusVault,
+  buildGraphShareArtifact,
   compileVault,
   consolidateVault,
   createSupersessionEdge,
@@ -52,10 +54,12 @@ import {
   queryGraphVault,
   queryVault,
   readApproval,
+  readGraphReport,
   registerLocalWhisperProvider,
   rejectApproval,
   reloadManagedSources,
   removeWatchedRoot,
+  renderGraphShareMarkdown,
   resumeSourceSession,
   reviewManagedSource,
   reviewSourceScope,
@@ -87,9 +91,9 @@ program
 function readCliVersion(): string {
   try {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string };
-    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "1.1.0";
+    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "1.2.0";
   } catch {
-    return "1.1.0";
+    return "1.2.0";
   }
 }
 
@@ -1106,6 +1110,27 @@ graph
   );
 
 graph
+  .command("share")
+  .description("Print a shareable summary of the compiled graph.")
+  .option("--post", "Print only the short social post text", false)
+  .action(async (options: { post?: boolean }) => {
+    const { paths } = await loadVaultConfig(process.cwd());
+    const raw = await readFile(paths.graphPath, "utf-8");
+    const graph: GraphArtifact = JSON.parse(raw);
+    const report = await readGraphReport(process.cwd());
+    const artifact = buildGraphShareArtifact({
+      graph,
+      report,
+      vaultName: path.basename(paths.rootDir)
+    });
+    if (isJson()) {
+      emitJson(artifact);
+      return;
+    }
+    log(options.post ? artifact.shortPost : renderGraphShareMarkdown(artifact));
+  });
+
+graph
   .command("query")
   .description("Traverse the compiled graph deterministically from local search seeds.")
   .argument("<question>", "Question or graph search seed")
@@ -1856,6 +1881,7 @@ program
     await compileVault(demoDir, {});
 
     const { paths } = await loadVaultConfig(demoDir);
+    const shareCardPath = path.join(demoDir, "wiki", "graph", "share-card.md");
 
     let graphStats = "";
     try {
@@ -1874,18 +1900,20 @@ program
       log("  3. Generated wiki pages with cross-references and a graph report");
       log("");
       log(`Vault location: ${demoDir}`);
+      log(`Share card: ${shareCardPath}`);
     }
 
     if (options.serve !== false) {
       const port = options.port ? parsePositiveInt(options.port, 0) || undefined : undefined;
       const server = await startGraphServer(demoDir, port, { full: false });
       if (isJson()) {
-        emitJson({ demoDir, graphStats: graphStats.trim(), port: server.port, url: `http://localhost:${server.port}` });
+        emitJson({ demoDir, graphStats: graphStats.trim(), shareCardPath, port: server.port, url: `http://localhost:${server.port}` });
       } else {
         log(`Graph viewer running at http://localhost:${server.port}`);
         log("");
         log("Try next:");
         log(`  cd ${demoDir}`);
+        log("  swarmvault graph share --post");
         log('  swarmvault query "How does contradiction detection work?"');
         log("  swarmvault lint");
       }
@@ -1896,11 +1924,12 @@ program
         process.exit(0);
       });
     } else if (isJson()) {
-      emitJson({ demoDir, graphStats: graphStats.trim() });
+      emitJson({ demoDir, graphStats: graphStats.trim(), shareCardPath });
     } else {
       log("");
       log("Try next:");
       log(`  cd ${demoDir}`);
+      log("  swarmvault graph share --post");
       log("  swarmvault graph serve");
       log('  swarmvault query "How does contradiction detection work?"');
     }
@@ -2056,15 +2085,18 @@ program
     }
 
     const compiled = await compileVault(rootDir, {});
+    const shareCardPath = path.join(rootDir, "wiki", "graph", "share-card.md");
     if (!isJson()) {
       log(`Compiled ${compiled.sourceCount} source(s), ${compiled.pageCount} page(s).`);
+      log(`Share card: ${shareCardPath}`);
+      log("Post text: swarmvault graph share --post");
     }
 
     if (options.serve !== false) {
       const port = options.port ? parsePositiveInt(options.port, 0) || undefined : undefined;
       const server = await startGraphServer(rootDir, port, { full: false });
       if (isJson()) {
-        emitJson({ ...result, compiled, port: server.port, url: `http://localhost:${server.port}` });
+        emitJson({ ...result, compiled, shareCardPath, port: server.port, url: `http://localhost:${server.port}` });
       } else {
         log(`Graph viewer running at http://localhost:${server.port}`);
       }
@@ -2075,7 +2107,7 @@ program
         process.exit(0);
       });
     } else if (isJson()) {
-      emitJson({ ...result, compiled });
+      emitJson({ ...result, compiled, shareCardPath });
     }
   });
 

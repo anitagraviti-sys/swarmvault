@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GraphCanvas } from "../src/components/GraphCanvas";
 import type { ViewerGraphArtifact, ViewerGraphNode, ViewerGraphPathResult } from "../src/lib";
 
-type CytoscapeHandler = (event: { target: { data: () => ViewerGraphNode } }) => void;
+type CytoscapeHandler = (event: { target: { data: () => ViewerGraphNode } | unknown }) => void;
 
 const { mockState, cytoscapeMock, resetMockState } = vi.hoisted(() => {
   const state = {
     handlers: new Map<string, CytoscapeHandler[]>(),
     addClassById: new Map<string, ReturnType<typeof vi.fn>>(),
     removeClass: vi.fn(),
+    unselect: vi.fn(),
     resize: vi.fn(),
     destroy: vi.fn(),
     fit: vi.fn(),
@@ -23,6 +24,7 @@ const { mockState, cytoscapeMock, resetMockState } = vi.hoisted(() => {
     state.handlers = new Map<string, CytoscapeHandler[]>();
     state.addClassById = new Map<string, ReturnType<typeof vi.fn>>();
     state.removeClass = vi.fn();
+    state.unselect = vi.fn();
     state.resize = vi.fn();
     state.destroy = vi.fn();
     state.fit = vi.fn();
@@ -61,7 +63,7 @@ const { mockState, cytoscapeMock, resetMockState } = vi.hoisted(() => {
         return { addClass, empty: () => false, renderedPosition: () => ({ x: 0, y: 0 }), hasClass: () => false };
       },
       elements() {
-        return { removeClass: state.removeClass };
+        return { removeClass: state.removeClass, unselect: state.unselect };
       },
       nodes: noopNodes,
       edges: noopEdges,
@@ -146,6 +148,7 @@ function sampleGraphWithHyperedges(): ViewerGraphArtifact {
 type RenderHandle = {
   cleanup: () => void;
   rerender: (pathResult: ViewerGraphPathResult | null) => void;
+  cyRef: { current: unknown };
 };
 
 function renderCanvas(onNodeSelect: (node: ViewerGraphNode | null) => void, pathResult: ViewerGraphPathResult | null = null): RenderHandle {
@@ -179,7 +182,8 @@ function renderCanvas(onNodeSelect: (node: ViewerGraphNode | null) => void, path
       });
       container.remove();
     },
-    rerender: render
+    rerender: render,
+    cyRef
   };
 }
 
@@ -218,6 +222,20 @@ describe("GraphCanvas", () => {
         data: () => sampleGraph().nodes[0] as ViewerGraphNode
       }
     });
+    expect(onNodeSelect).toHaveBeenLastCalledWith(null);
+
+    handle.cleanup();
+  });
+
+  it("clears selection when Cytoscape background is tapped", () => {
+    const onNodeSelect = vi.fn();
+    const handle = renderCanvas(onNodeSelect);
+    const tapHandler = mockState.handlers.get("tap:*")?.[0];
+
+    expect(tapHandler).toBeTruthy();
+    tapHandler?.({ target: handle.cyRef.current });
+
+    expect(mockState.unselect).toHaveBeenCalled();
     expect(onNodeSelect).toHaveBeenLastCalledWith(null);
 
     handle.cleanup();

@@ -436,6 +436,11 @@ export function GraphCanvas({
 
     cy.on("select", "node", (event) => handleNodeSelect(event.target.data() as ViewerGraphNode));
     cy.on("unselect", "node", () => handleNodeSelect(null));
+    cy.on("tap", (event) => {
+      if (event.target !== cy) return;
+      cy.elements(":selected").unselect();
+      handleNodeSelect(null);
+    });
 
     cy.on("mouseover", "edge", (event) => {
       event.target.style("label", event.target.data("relation") ?? "");

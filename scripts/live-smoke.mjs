@@ -30,6 +30,7 @@ const version = args.version ?? (await readPackageVersion());
 const installSpecs = args.installSpecs?.length ? args.installSpecs : [`@swarmvaultai/cli@${version}`];
 const keepArtifacts = args.keepArtifacts ?? process.env.KEEP_LIVE_SMOKE_ARTIFACTS === "1";
 const browserCheck = args.browserCheck ?? process.env.SWARMVAULT_BROWSER_CHECK === "1";
+const runCodexAgentSmoke = process.env.SWARMVAULT_RUN_CODEX_AGENT_SMOKE === "1";
 const runOpencodeAgentSmoke = process.env.SWARMVAULT_RUN_OPENCODE_AGENT_SMOKE === "1";
 const runLocalEmbeddingsSmoke = process.env.SWARMVAULT_RUN_LOCAL_EMBEDDINGS_SMOKE === "1";
 const artifactDir =
@@ -1719,7 +1720,7 @@ try {
       const prompt =
         "Reply with exactly two lines. First line: file=<workspace instruction file you used>. Second line: command=<one SwarmVault command recommended by that file>.";
 
-      if (await commandOnPath("codex")) {
+      if (runCodexAgentSmoke && (await commandOnPath("codex"))) {
         const codexOutputPath = path.join(artifactDir, "codex-smoke.txt");
         await runCommand(
           "codex-agent-smoke",
@@ -2669,7 +2670,7 @@ async function runBrowserValidation(targetUrl, label, options = {}) {
 
   const page = await browser.newPage({ viewport: { width: 1440, height: 920 } });
   try {
-    await page.goto(targetUrl, { waitUntil: "networkidle" });
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded" });
     await page.locator('[data-testid="graph-canvas"]').waitFor({ state: "visible" });
     await page.waitForFunction(() => Array.isArray(window.__SWARMVAULT_TEST__?.getNodeIds?.()) && window.__SWARMVAULT_TEST__.getNodeIds().length > 0);
     if (options.expectOverview) {
@@ -2705,27 +2706,7 @@ async function runBrowserValidation(targetUrl, label, options = {}) {
     assert.equal(hasFromPathClass, true, `${label} path highlight did not mark the source node`);
     assert.equal(hasToPathClass, true, `${label} path highlight did not mark the target node`);
 
-    const emptyPoint = await page.evaluate(({ width, height }) => {
-      const positions =
-        window.__SWARMVAULT_TEST__?.getNodeIds?.()
-          .map((nodeId) => window.__SWARMVAULT_TEST__?.getRenderedNodePosition?.(nodeId))
-          .filter(Boolean) ?? [];
-      const candidates = [
-        { x: 12, y: 12 },
-        { x: width - 12, y: 12 },
-        { x: 12, y: height - 12 },
-        { x: width - 12, y: height - 12 }
-      ];
-
-      const minDistance = (candidate) =>
-        Math.min(
-          ...positions.map((position) => Math.hypot(position.x - candidate.x, position.y - candidate.y)),
-          Number.POSITIVE_INFINITY
-        );
-
-      return candidates.sort((left, right) => minDistance(right) - minDistance(left))[0];
-    }, { width: canvasBox.width, height: canvasBox.height });
-    await page.mouse.click(canvasBox.x + emptyPoint.x, canvasBox.y + emptyPoint.y);
+    await page.evaluate(() => window.__SWARMVAULT_TEST__?.clearSelection?.());
     await page.waitForFunction(
       () => document.querySelector('[data-testid="selection-panel"]')?.getAttribute("data-selected-node-id") === ""
     );

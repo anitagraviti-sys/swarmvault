@@ -42,6 +42,7 @@ SWARMVAULT_OLLAMA_BASE_URL=https://ollama.com/v1
 SWARMVAULT_OLLAMA_API_STYLE=chat
 SWARMVAULT_ANTHROPIC_MODEL=claude-sonnet-4-20250514
 SWARMVAULT_OPENCODE_OLLAMA_MODEL=gpt-oss:20b-cloud
+SWARMVAULT_RUN_CODEX_AGENT_SMOKE=1
 SWARMVAULT_RUN_OPENCODE_AGENT_SMOKE=1
 SWARMVAULT_RUN_LOCAL_EMBEDDINGS_SMOKE=1
 SWARMVAULT_LOCAL_EMBEDDINGS_MODEL=nomic-embed-text
@@ -145,7 +146,8 @@ Confirm the published skill includes `README.md` plus the expected examples, ref
 - run `install --agent trae`, `install --agent claw`, and `install --agent droid`
 - verify the installed package writes `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `CONVENTIONS.md`, `.aider.conf.yml`, `.github/copilot-instructions.md`, `.trae/rules/swarmvault.md`, `.claw/skills/swarmvault/SKILL.md`, `.factory/rules/swarmvault.md`, and the expected hook/plugin artifacts
 - verify the managed git hook block invokes `swarmvault watch --repo --once --code-only`
-- when local binaries and credentials are available, run Codex CLI against `AGENTS.md`, Claude Code against `CLAUDE.md`, and Gemini CLI against `GEMINI.md`
+- when local binaries and credentials are available, run Claude Code against `CLAUDE.md` and Gemini CLI against `GEMINI.md`
+- run the Codex host-agent check only when `SWARMVAULT_RUN_CODEX_AGENT_SMOKE=1` is set, because it depends on the local Codex CLI configuration and model access rather than the installed SwarmVault artifact
 - run the OpenCode host-agent check only when `SWARMVAULT_RUN_OPENCODE_AGENT_SMOKE=1` is set, because it depends on an external model path and is not part of the required packaged-artifact release gate
 - run the Ollama local-embeddings check only when `SWARMVAULT_RUN_LOCAL_EMBEDDINGS_SMOKE=1` is set, because it depends on a reachable embedding-capable local model and is not part of the required packaged-artifact release gate
 - on live npm-installed runs, execute `swarmvault source add https://github.com/karpathy/micrograd` and verify the registry entry, compile artifacts, and source brief
