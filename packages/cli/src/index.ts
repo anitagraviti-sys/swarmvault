@@ -59,6 +59,7 @@ import {
   rejectApproval,
   reloadManagedSources,
   removeWatchedRoot,
+  renderGraphShareBundleFiles,
   renderGraphShareMarkdown,
   renderGraphShareSvg,
   resumeSourceSession,
@@ -92,9 +93,9 @@ program
 function readCliVersion(): string {
   try {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string };
-    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "1.3.0";
+    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "1.4.0";
   } catch {
-    return "1.3.0";
+    return "1.4.0";
   }
 }
 
@@ -169,6 +170,30 @@ function log(message: string): void {
   } else {
     process.stdout.write(`${message}\n`);
   }
+}
+
+async function writeShareBundle(
+  bundlePath: string,
+  files: ReturnType<typeof renderGraphShareBundleFiles>
+): Promise<{
+  markdownPath: string;
+  postPath: string;
+  svgPath: string;
+  previewHtmlPath: string;
+  artifactJsonPath: string;
+}> {
+  await mkdir(bundlePath, { recursive: true });
+  const bundleFiles = {
+    markdownPath: path.join(bundlePath, "share-card.md"),
+    postPath: path.join(bundlePath, "share-post.txt"),
+    svgPath: path.join(bundlePath, "share-card.svg"),
+    previewHtmlPath: path.join(bundlePath, "share-preview.html"),
+    artifactJsonPath: path.join(bundlePath, "share-artifact.json")
+  };
+  for (const file of files) {
+    await writeFile(path.join(bundlePath, file.relativePath), file.content, "utf8");
+  }
+  return bundleFiles;
 }
 
 function emitNotice(message: string): void {
@@ -1115,9 +1140,11 @@ graph
   .description("Print a shareable summary of the compiled graph.")
   .option("--post", "Print only the short social post text", false)
   .option("--svg [path]", "Write the visual SVG share card, defaulting to wiki/graph/share-card.svg")
-  .action(async (options: { post?: boolean; svg?: boolean | string }) => {
-    if (options.post && options.svg) {
-      throw new Error("Choose either --post or --svg, not both.");
+  .option("--bundle [dir]", "Write the portable share kit bundle, defaulting to wiki/graph/share-kit")
+  .action(async (options: { post?: boolean; svg?: boolean | string; bundle?: boolean | string }) => {
+    const outputModeCount = [options.post, options.svg, options.bundle].filter(Boolean).length;
+    if (outputModeCount > 1) {
+      throw new Error("Choose one graph share output mode: --post, --svg, or --bundle.");
     }
     const { paths } = await loadVaultConfig(process.cwd());
     const raw = await readFile(paths.graphPath, "utf-8");
@@ -1138,6 +1165,17 @@ graph
         return;
       }
       log(`Wrote SVG share card to ${svgPath}`);
+      return;
+    }
+    if (options.bundle) {
+      const bundlePath =
+        typeof options.bundle === "string" ? path.resolve(process.cwd(), options.bundle) : path.join(paths.wikiDir, "graph", "share-kit");
+      const bundleFiles = await writeShareBundle(bundlePath, renderGraphShareBundleFiles(artifact));
+      if (isJson()) {
+        emitJson({ ...artifact, bundlePath, bundleFiles });
+        return;
+      }
+      log(`Wrote share kit to ${bundlePath}`);
       return;
     }
     if (isJson()) {
@@ -1900,6 +1938,7 @@ program
     const { paths } = await loadVaultConfig(demoDir);
     const shareCardPath = path.join(demoDir, "wiki", "graph", "share-card.md");
     const shareCardSvgPath = path.join(demoDir, "wiki", "graph", "share-card.svg");
+    const shareKitPath = path.join(demoDir, "wiki", "graph", "share-kit");
 
     let graphStats = "";
     try {
@@ -1920,6 +1959,7 @@ program
       log(`Vault location: ${demoDir}`);
       log(`Share card: ${shareCardPath}`);
       log(`Visual card: ${shareCardSvgPath}`);
+      log(`Share kit: ${shareKitPath}`);
     }
 
     if (options.serve !== false) {
@@ -1931,6 +1971,7 @@ program
           graphStats: graphStats.trim(),
           shareCardPath,
           shareCardSvgPath,
+          shareKitPath,
           port: server.port,
           url: `http://localhost:${server.port}`
         });
@@ -1950,7 +1991,7 @@ program
         process.exit(0);
       });
     } else if (isJson()) {
-      emitJson({ demoDir, graphStats: graphStats.trim(), shareCardPath, shareCardSvgPath });
+      emitJson({ demoDir, graphStats: graphStats.trim(), shareCardPath, shareCardSvgPath, shareKitPath });
     } else {
       log("");
       log("Try next:");
@@ -2113,10 +2154,12 @@ program
     const compiled = await compileVault(rootDir, {});
     const shareCardPath = path.join(rootDir, "wiki", "graph", "share-card.md");
     const shareCardSvgPath = path.join(rootDir, "wiki", "graph", "share-card.svg");
+    const shareKitPath = path.join(rootDir, "wiki", "graph", "share-kit");
     if (!isJson()) {
       log(`Compiled ${compiled.sourceCount} source(s), ${compiled.pageCount} page(s).`);
       log(`Share card: ${shareCardPath}`);
       log(`Visual card: ${shareCardSvgPath}`);
+      log(`Share kit: ${shareKitPath}`);
       log("Post text: swarmvault graph share --post");
     }
 
@@ -2124,7 +2167,15 @@ program
       const port = options.port ? parsePositiveInt(options.port, 0) || undefined : undefined;
       const server = await startGraphServer(rootDir, port, { full: false });
       if (isJson()) {
-        emitJson({ ...result, compiled, shareCardPath, shareCardSvgPath, port: server.port, url: `http://localhost:${server.port}` });
+        emitJson({
+          ...result,
+          compiled,
+          shareCardPath,
+          shareCardSvgPath,
+          shareKitPath,
+          port: server.port,
+          url: `http://localhost:${server.port}`
+        });
       } else {
         log(`Graph viewer running at http://localhost:${server.port}`);
       }
@@ -2135,7 +2186,7 @@ program
         process.exit(0);
       });
     } else if (isJson()) {
-      emitJson({ ...result, compiled, shareCardPath, shareCardSvgPath });
+      emitJson({ ...result, compiled, shareCardPath, shareCardSvgPath, shareKitPath });
     }
   });
 

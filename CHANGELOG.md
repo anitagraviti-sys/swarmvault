@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+- Added portable graph share kits — every normal compile now writes `wiki/graph/share-kit/` beside the existing markdown and SVG share cards, with `share-card.md`, `share-post.txt`, `share-card.svg`, `share-preview.html`, and `share-artifact.json`
+- Extended `swarmvault graph share` with `--bundle [dir]`, defaulting to `wiki/graph/share-kit`; markdown, `--post`, and `--svg [path]` behavior remain unchanged, and `--json --bundle` returns the structured artifact plus `bundlePath` and named output paths instead of raw HTML/SVG contents
+- Updated `swarmvault scan` and `swarmvault demo` to surface the share-kit path so first-run users can post text, share an SVG, link or screenshot the HTML preview, or inspect JSON metadata from the same compile
+- Added renderer, compile-flow, and installed-package smoke coverage for share kits, including escaped HTML preview output and mode-conflict validation for `graph share`
+- Refreshed the OSS README trio, package docs, ClawHub skill bundle, website docs, and product `spec.md` around the share-kit workflow
+
 ## 1.3.0
 
 - Added dependency-free visual graph share cards — every normal compile now writes `wiki/graph/share-card.svg` beside `wiki/graph/share-card.md`, using the existing graph share artifact to render a 1200x630 SVG with vault stats, top hubs, bridge nodes, a surprising link, and the install/scan CTA

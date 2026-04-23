@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildGraphShareArtifact, renderGraphShareMarkdown, renderGraphShareSvg } from "../src/graph-share.js";
+import {
+  buildGraphShareArtifact,
+  renderGraphShareBundleFiles,
+  renderGraphShareMarkdown,
+  renderGraphSharePreviewHtml,
+  renderGraphShareSvg
+} from "../src/graph-share.js";
 import type { GraphArtifact, GraphNode, GraphPage, GraphReportArtifact, SourceManifest } from "../src/types.js";
 
 function node(input: Partial<GraphNode> & { id: string; label: string; type: GraphNode["type"] }): GraphNode {
@@ -169,5 +175,51 @@ describe("graph share card", () => {
     expect(svg).toContain("Graph nodes");
     expect(svg).toContain("Knowledge &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(svg).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("renders a self-contained escaped HTML share preview", () => {
+    const unsafeGraph = graph();
+    unsafeGraph.nodes[0] = {
+      ...unsafeGraph.nodes[0]!,
+      label: "Knowledge <script>alert(1)</script>"
+    };
+    const artifact = buildGraphShareArtifact({ graph: unsafeGraph, report: null, vaultName: "demo-vault" });
+    const html = renderGraphSharePreviewHtml(artifact);
+
+    expect(html).toContain("<!doctype html>");
+    expect(html).toContain("<title>SwarmVault Share Kit - demo-vault</title>");
+    expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"');
+    expect(html).toContain("I scanned demo-vault with SwarmVault");
+    expect(html).toContain("1 sources -&gt; 2 wiki pages");
+    expect(html).toContain("Top hubs: Knowledge &lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain("npm install -g @swarmvaultai/cli && swarmvault scan ./your-repo");
+    expect(html).toContain("Knowledge &lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("renders the stable share kit file set", () => {
+    const artifact = buildGraphShareArtifact({ graph: graph(), report: report(), vaultName: "demo-vault" });
+    const files = renderGraphShareBundleFiles(artifact);
+
+    expect(files.map((file) => file.relativePath).sort()).toEqual([
+      "share-artifact.json",
+      "share-card.md",
+      "share-card.svg",
+      "share-post.txt",
+      "share-preview.html"
+    ]);
+    expect(files.find((file) => file.relativePath === "share-card.md")?.content).toContain("# SwarmVault Share Card");
+    expect(files.find((file) => file.relativePath === "share-post.txt")?.content).toBe(`${artifact.shortPost}\n`);
+    expect(files.find((file) => file.relativePath === "share-card.svg")?.content).toContain('width="1200" height="630"');
+    expect(files.find((file) => file.relativePath === "share-preview.html")?.content).toContain("<!doctype html>");
+    expect(JSON.parse(files.find((file) => file.relativePath === "share-artifact.json")?.content ?? "{}")).toMatchObject({
+      vaultName: "demo-vault",
+      overview: {
+        sources: 1,
+        pages: 2,
+        nodes: 2,
+        edges: 1
+      }
+    });
   });
 });

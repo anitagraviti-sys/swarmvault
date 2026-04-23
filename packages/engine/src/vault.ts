@@ -28,7 +28,7 @@ import { runDeepLint } from "./deep-lint.js";
 import { embeddingSimilarityEdges, filterGraphBySourceClass, semanticGraphMatches, semanticPageSearch } from "./embeddings.js";
 import { markSuperseded, resolveDecayConfig, runDecayPass } from "./freshness.js";
 import { enrichGraph } from "./graph-enrichment.js";
-import { buildGraphShareArtifact, renderGraphShareSvg } from "./graph-share.js";
+import { buildGraphShareArtifact, renderGraphShareBundleFiles, renderGraphShareSvg } from "./graph-share.js";
 import {
   blastRadius,
   computeNormLabel,
@@ -118,6 +118,7 @@ import type {
   GraphPathResult,
   GraphQueryResult,
   GraphReportArtifact,
+  GraphShareBundleFile,
   InitOptions,
   LintFinding,
   LintOptions,
@@ -2473,7 +2474,7 @@ async function buildGraphOrientationPages(
   previousCompiledAt?: string,
   contradictions: DetectedContradiction[] = [],
   config?: VaultConfig | null
-): Promise<{ records: ManagedPageRecord[]; report: GraphReportArtifact; shareSvg: string }> {
+): Promise<{ records: ManagedPageRecord[]; report: GraphReportArtifact; shareSvg: string; shareBundleFiles: GraphShareBundleFile[] }> {
   const benchmark = await readJsonFile<BenchmarkArtifact>(paths.benchmarkPath);
   const communityRecords: ManagedPageRecord[] = [];
 
@@ -2552,7 +2553,8 @@ async function buildGraphOrientationPages(
   return {
     records: [reportRecord, shareRecord, ...communityRecords],
     report,
-    shareSvg: renderGraphShareSvg(shareArtifact)
+    shareSvg: renderGraphShareSvg(shareArtifact),
+    shareBundleFiles: renderGraphShareBundleFiles(shareArtifact)
   };
 }
 
@@ -2561,6 +2563,12 @@ async function writePage(wikiDir: string, relativePath: string, content: string,
   const changed = await writeFileIfChanged(absolutePath, content);
   if (changed) {
     changedPages.push(relativePath);
+  }
+}
+
+async function writeGraphShareBundle(wikiDir: string, files: GraphShareBundleFile[]): Promise<void> {
+  for (const file of files) {
+    await writeFileIfChanged(path.join(wikiDir, "graph", "share-kit", file.relativePath), file.content);
   }
 }
 
@@ -3313,6 +3321,7 @@ async function syncVaultArtifacts(
   await writeJsonFile(paths.graphPath, graph);
   await writeJsonFile(path.join(paths.wikiDir, "graph", "report.json"), graphOrientation.report);
   await writeFileIfChanged(path.join(paths.wikiDir, "graph", "share-card.svg"), graphOrientation.shareSvg);
+  await writeGraphShareBundle(paths.wikiDir, graphOrientation.shareBundleFiles);
   await writeJsonFile(paths.codeIndexPath, input.codeIndex);
   await writeJsonFile(paths.compileStatePath, {
     generatedAt: graph.generatedAt,
@@ -3368,7 +3377,12 @@ async function refreshIndexesAndSearch(rootDir: string, pages: GraphPage[]): Pro
     ),
     (page) => page.id
   );
-  const graphOrientation: { records: ManagedPageRecord[]; report: GraphReportArtifact | null; shareSvg: string } = currentGraph
+  const graphOrientation: {
+    records: ManagedPageRecord[];
+    report: GraphReportArtifact | null;
+    shareSvg: string;
+    shareBundleFiles: GraphShareBundleFile[];
+  } = currentGraph
     ? await buildGraphOrientationPages(
         {
           ...currentGraph,
@@ -3380,7 +3394,7 @@ async function refreshIndexesAndSearch(rootDir: string, pages: GraphPage[]): Pro
         [],
         config
       )
-    : { records: [], report: null, shareSvg: "" };
+    : { records: [], report: null, shareSvg: "", shareBundleFiles: [] };
   const dashboardRecords = currentGraph
     ? await buildDashboardRecords(
         config,
@@ -3524,6 +3538,7 @@ async function refreshIndexesAndSearch(rootDir: string, pages: GraphPage[]): Pro
   if (graphOrientation.report) {
     await writeJsonFile(path.join(paths.wikiDir, "graph", "report.json"), graphOrientation.report);
     await writeFileIfChanged(path.join(paths.wikiDir, "graph", "share-card.svg"), graphOrientation.shareSvg);
+    await writeGraphShareBundle(paths.wikiDir, graphOrientation.shareBundleFiles);
   }
 
   const existingProjectIndexPaths = (await listFilesRecursive(paths.projectsDir))
@@ -3542,7 +3557,11 @@ async function refreshIndexesAndSearch(rootDir: string, pages: GraphPage[]): Pro
   const existingGraphPages = (await listFilesRecursive(path.join(paths.wikiDir, "graph").replace(/\/$/, "")).catch(() => []))
     .filter((absolutePath) => absolutePath.endsWith(".md"))
     .map((absolutePath) => toPosix(path.relative(paths.wikiDir, absolutePath)));
-  const allowedGraphPages = new Set(["graph/index.md", ...graphOrientation.records.map((record) => record.page.path)]);
+  const allowedGraphPages = new Set([
+    "graph/index.md",
+    "graph/share-kit/share-card.md",
+    ...graphOrientation.records.map((record) => record.page.path)
+  ]);
   await Promise.all(
     existingGraphPages
       .filter((relativePath) => !allowedGraphPages.has(relativePath))

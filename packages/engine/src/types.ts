@@ -1827,6 +1827,11 @@ export interface GraphShareArtifact {
   relatedSourceIds: string[];
 }
 
+export interface GraphShareBundleFile {
+  relativePath: string;
+  content: string;
+}
+
 export interface ScheduledCompileTask {
   type: "compile";
   approve?: boolean;

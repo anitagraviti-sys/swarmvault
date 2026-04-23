@@ -160,6 +160,39 @@ try {
     assert.equal(regeneratedShare.svgPath, defaultShareSvgPath, "graph share --svg did not report the default SVG path");
     const shareSvg = await fs.readFile(defaultShareSvgPath, "utf8");
     assert.ok(shareSvg.includes('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"'), "visual share card is not a 1200x630 SVG");
+    const defaultShareKitPath = path.join(workspaceDir, "wiki", "graph", "share-kit");
+    const defaultShareKit = await runCliJson(["graph", "share", "--bundle"]);
+    assert.equal(defaultShareKit.bundlePath, defaultShareKitPath, "graph share --bundle did not report the default bundle path");
+    assert.deepEqual(Object.keys(defaultShareKit.bundleFiles).sort(), [
+      "artifactJsonPath",
+      "markdownPath",
+      "postPath",
+      "previewHtmlPath",
+      "svgPath"
+    ]);
+    assert.ok(!("sharePreviewHtml" in defaultShareKit), "graph share --json --bundle should not emit raw HTML");
+    assert.ok(!("shareSvg" in defaultShareKit), "graph share --json --bundle should not emit raw SVG");
+    for (const outputPath of Object.values(defaultShareKit.bundleFiles)) {
+      await assertExists(outputPath);
+    }
+    const sharePreview = await fs.readFile(defaultShareKit.bundleFiles.previewHtmlPath, "utf8");
+    assert.ok(sharePreview.includes("<!doctype html>"), "share kit preview is not an HTML document");
+    assert.ok(
+      sharePreview.includes("npm install -g @swarmvaultai/cli && swarmvault scan ./your-repo"),
+      "share kit preview does not include the install/scan CTA"
+    );
+    const customShareKitPath = path.join(workspaceDir, "exports", "share-kit");
+    const customShareKit = await runCliJson(["graph", "share", "--bundle", customShareKitPath]);
+    assert.equal(customShareKit.bundlePath, customShareKitPath, "graph share --bundle <dir> did not report the custom bundle path");
+    await assertExists(path.join(customShareKitPath, "share-preview.html"));
+    const bundleConflict = await runInstalledCliCommand("graph-share-post-bundle-conflict", ["graph", "share", "--post", "--bundle"], {
+      cwd: workspaceDir,
+      expectFailure: true
+    });
+    assert.ok(
+      `${bundleConflict.stdout}\n${bundleConflict.stderr}`.includes("Choose one graph share output mode"),
+      "graph share --post --bundle did not return the expected conflict error"
+    );
     const sourcePage = await fs.readFile(path.join(workspaceDir, "wiki", "sources", `${manifest.sourceId}.md`), "utf8");
     assert.ok(sourcePage.includes("title: Durable Research Vaults"), "markdown source page did not keep the manifest title");
     assert.ok(sourcePage.includes("# Durable Research Vaults"), "markdown source page did not keep a clean heading");
@@ -2465,6 +2498,13 @@ async function runCommand(label, command, args, options = {}) {
     fs.writeFile(stderrPath, stderr, "utf8"),
     fs.writeFile(metaPath, JSON.stringify({ command, args, cwd: options.cwd ?? repoRoot, exit }, null, 2), "utf8")
   ]);
+
+  if (options.expectFailure) {
+    if (exit.code === 0) {
+      throw new Error(`Command unexpectedly succeeded (${command} ${args.join(" ")})`);
+    }
+    return { stdout, stderr, exit };
+  }
 
   if (exit.code !== 0) {
     const timeoutSuffix = timedOut ? " timed_out=true" : "";

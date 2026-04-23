@@ -729,6 +729,24 @@ describe("swarmvault workflow", () => {
     const shareSvg = await fs.readFile(shareSvgPath, "utf8");
     expect(shareSvg).toContain('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"');
     expect(shareSvg).toContain("SwarmVault share card");
+    const shareKitDir = path.join(rootDir, "wiki", "graph", "share-kit");
+    const shareKitFiles = await fs.readdir(shareKitDir);
+    expect(shareKitFiles.sort()).toEqual([
+      "share-artifact.json",
+      "share-card.md",
+      "share-card.svg",
+      "share-post.txt",
+      "share-preview.html"
+    ]);
+    const sharePreview = await fs.readFile(path.join(shareKitDir, "share-preview.html"), "utf8");
+    expect(sharePreview).toContain("<!doctype html>");
+    expect(sharePreview).toContain("npm install -g @swarmvaultai/cli && swarmvault scan ./your-repo");
+    const shareArtifact = JSON.parse(await fs.readFile(path.join(shareKitDir, "share-artifact.json"), "utf8")) as {
+      vaultName?: string;
+      overview?: { sources?: number };
+    };
+    expect(shareArtifact.vaultName).toBe(path.basename(rootDir));
+    expect(shareArtifact.overview?.sources).toBe(1);
     const sourcePagePath = path.join(rootDir, "wiki", "sources", `${manifest.sourceId}.md`);
     const parsedSourcePage = matter(await fs.readFile(sourcePagePath, "utf8"));
     expect(parsedSourcePage.data.title).toBe("Local-First SwarmVault");

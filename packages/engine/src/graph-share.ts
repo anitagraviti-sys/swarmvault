@@ -1,4 +1,4 @@
-import type { GraphArtifact, GraphNode, GraphReportArtifact, GraphShareArtifact } from "./types.js";
+import type { GraphArtifact, GraphNode, GraphReportArtifact, GraphShareArtifact, GraphShareBundleFile } from "./types.js";
 import { truncate, uniqueBy } from "./utils.js";
 
 function displayVaultName(value: string | undefined): string {
@@ -381,4 +381,102 @@ export function renderGraphShareSvg(artifact: GraphShareArtifact): string {
   ];
 
   return lines.join("\n");
+}
+
+export function renderGraphSharePreviewHtml(artifact: GraphShareArtifact): string {
+  const rawSvg = renderGraphShareSvg(artifact);
+  const xmlDeclaration = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  const svg = rawSvg.startsWith(xmlDeclaration) ? rawSvg.slice(xmlDeclaration.length) : rawSvg;
+  const topHubs = artifact.highlights.topHubs
+    .slice(0, 5)
+    .map((node) => `<li>${escapeXml(node.degree ? `${node.label} (${node.degree})` : node.label)}</li>`)
+    .join("\n");
+  const questions = artifact.highlights.suggestedQuestions
+    .slice(0, 3)
+    .map((question) => `<li>${escapeXml(question)}</li>`)
+    .join("\n");
+  const title = `SwarmVault Share Kit - ${artifact.vaultName}`;
+
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '  <meta charset="utf-8">',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+    `  <title>${escapeXml(title)}</title>`,
+    `  <meta name="description" content="${escapeXml(artifact.tagline)}">`,
+    "  <style>",
+    "    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #020617; color: #e2e8f0; }",
+    "    body { margin: 0; min-height: 100vh; background: #020617; }",
+    "    main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }",
+    "    header { margin-bottom: 24px; }",
+    "    h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: 0; color: #f8fafc; }",
+    "    p { margin: 0; color: #94a3b8; line-height: 1.6; }",
+    "    .preview { display: block; width: 100%; max-width: 960px; margin: 0 auto 28px; border: 1px solid #1e293b; background: #020617; }",
+    "    .preview svg { display: block; width: 100%; height: auto; }",
+    "    .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr); gap: 18px; }",
+    "    section { border: 1px solid #1e293b; background: #0f172a; padding: 18px; }",
+    "    h2 { margin: 0 0 12px; font-size: 16px; color: #86efac; letter-spacing: 0; }",
+    "    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: #d1fae5; font-size: 14px; line-height: 1.55; }",
+    "    ul { margin: 0; padding-left: 20px; color: #cbd5e1; line-height: 1.6; }",
+    "    code { color: #d1fae5; }",
+    "    .cta { margin-top: 14px; padding: 12px 14px; background: #020617; border: 1px solid #334155; color: #d1fae5; font-weight: 700; overflow-wrap: anywhere; }",
+    "    @media (max-width: 760px) { main { width: min(100% - 24px, 1120px); padding-top: 20px; } .grid { grid-template-columns: 1fr; } h1 { font-size: 26px; } section { padding: 14px; } }",
+    "  </style>",
+    "</head>",
+    "<body>",
+    '  <main aria-labelledby="share-title">',
+    "    <header>",
+    `      <h1 id="share-title">${escapeXml(artifact.vaultName)}</h1>`,
+    `      <p>${escapeXml(artifact.tagline)}</p>`,
+    "    </header>",
+    '    <section class="preview" aria-label="Visual share card">',
+    svg
+      .split("\n")
+      .map((line) => `      ${line}`)
+      .join("\n"),
+    "    </section>",
+    '    <div class="grid">',
+    '      <section aria-labelledby="share-post-title">',
+    '        <h2 id="share-post-title">Share Post</h2>',
+    `        <pre>${escapeXml(artifact.shortPost)}</pre>`,
+    "      </section>",
+    '      <section aria-labelledby="share-details-title">',
+    '        <h2 id="share-details-title">Highlights</h2>',
+    `        <ul>${topHubs || "<li>Top hubs are still emerging.</li>"}</ul>`,
+    '        <h2 style="margin-top:18px">Ask Next</h2>',
+    `        <ul>${questions || "<li>Add more sources, run compile, then ask what changed.</li>"}</ul>`,
+    '        <div class="cta">npm install -g @swarmvaultai/cli && swarmvault scan ./your-repo</div>',
+    "      </section>",
+    "    </div>",
+    "  </main>",
+    "</body>",
+    "</html>",
+    ""
+  ].join("\n");
+}
+
+export function renderGraphShareBundleFiles(artifact: GraphShareArtifact): GraphShareBundleFile[] {
+  return [
+    {
+      relativePath: "share-card.md",
+      content: renderGraphShareMarkdown(artifact)
+    },
+    {
+      relativePath: "share-post.txt",
+      content: `${artifact.shortPost}\n`
+    },
+    {
+      relativePath: "share-card.svg",
+      content: renderGraphShareSvg(artifact)
+    },
+    {
+      relativePath: "share-preview.html",
+      content: renderGraphSharePreviewHtml(artifact)
+    },
+    {
+      relativePath: "share-artifact.json",
+      content: `${JSON.stringify(artifact, null, 2)}\n`
+    }
+  ];
 }

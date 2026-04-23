@@ -41,6 +41,7 @@ swarmvault compile --max-tokens 120000
 swarmvault diff
 swarmvault graph share --post
 swarmvault graph share --svg ./share-card.svg
+swarmvault graph share --bundle ./share-kit
 swarmvault benchmark
 swarmvault query "What keeps recurring?" --commit
 swarmvault query "Turn this into slides" --format slides
@@ -87,7 +88,7 @@ Quick-start a scratch vault from a local directory in one command.
 - initializes the current directory as a SwarmVault workspace
 - ingests the supplied directory as local sources
 - compiles the vault immediately
-- writes `wiki/graph/share-card.md` and `wiki/graph/share-card.svg`, then prints both paths
+- writes `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, and `wiki/graph/share-kit/`, then prints the paths
 - starts `graph serve` unless you pass `--no-serve`
 - respects `--port` when you want a specific viewer port
 
@@ -100,7 +101,7 @@ Create a temporary sample vault with bundled sources, compile it immediately, an
 - writes the demo vault under the system temp directory
 - requires no API keys or extra setup
 - is the fastest way to inspect the full init + ingest + compile + graph workflow on a clean machine
-- writes `wiki/graph/share-card.md` and `wiki/graph/share-card.svg` inside the demo vault
+- writes `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, and `wiki/graph/share-kit/` inside the demo vault
 - respects `--port` when you want a specific viewer port
 
 ### `swarmvault diff`
@@ -211,7 +212,7 @@ Compile the current manifests into:
 - generated markdown in `wiki/`
 - structured graph data in `state/graph.json`
 - local search data in `state/search.sqlite`
-- share cards at `wiki/graph/share-card.md` and `wiki/graph/share-card.svg`
+- share cards at `wiki/graph/share-card.md` and `wiki/graph/share-card.svg`, plus a portable share kit at `wiki/graph/share-kit/`
 
 The compiler also reads `swarmvault.schema.md` and records a `schema_hash` plus lifecycle metadata such as `status`, `created_at`, `updated_at`, `compiled_from`, and `managed_by` in generated pages so schema edits can mark pages stale without losing lifecycle state.
 
@@ -371,14 +372,15 @@ Inspect graph metadata, community membership, neighbors, provenance, and group-p
 
 List the most connected bridge-heavy nodes in the current graph.
 
-### `swarmvault graph share [--post] [--svg [path]]`
+### `swarmvault graph share [--post] [--svg [path]] [--bundle [dir]]`
 
 Print a shareable summary of the compiled graph.
 
 - default output is the same markdown shape written to `wiki/graph/share-card.md`
 - `--post` prints only the concise social-post text
 - `--svg [path]` writes the 1200x630 visual share card, defaulting to `wiki/graph/share-card.svg`
-- `--json` emits the structured share artifact for automation; with `--svg`, it also includes `svgPath`
+- `--bundle [dir]` writes `share-card.md`, `share-post.txt`, `share-card.svg`, `share-preview.html`, and `share-artifact.json`, defaulting to `wiki/graph/share-kit`
+- `--json` emits the structured share artifact for automation; with `--svg`, it also includes `svgPath`; with `--bundle`, it includes `bundlePath` and named output paths
 - useful immediately after `swarmvault scan`, `swarmvault demo`, or a normal compile
 
 ### `swarmvault graph blast <target> [--depth <n>]`
