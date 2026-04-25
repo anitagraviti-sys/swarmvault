@@ -248,6 +248,23 @@ export type ViewerCandidateRecord = {
   scoreBreakdown?: Record<string, number>;
 };
 
+export type ViewerMemoryTaskSummary = {
+  id: string;
+  title: string;
+  goal: string;
+  status: "active" | "blocked" | "completed" | "archived";
+  target?: string;
+  agent?: string;
+  createdAt: string;
+  updatedAt: string;
+  contextPackIds: string[];
+  changedPaths: string[];
+  decisionCount: number;
+  followUpCount: number;
+  artifactPath: string;
+  markdownPath: string;
+};
+
 export type ViewerLintFinding = {
   id: string;
   severity: "error" | "warning" | "info";
@@ -263,6 +280,7 @@ export type ViewerWorkspaceBundle = {
   graph: ViewerGraphArtifact;
   approvals: ViewerApprovalSummary[];
   candidates: ViewerCandidateRecord[];
+  memoryTasks: ViewerMemoryTaskSummary[];
   watchStatus: ViewerWatchStatus;
   graphReport: ViewerGraphReport | null;
   lintFindings: ViewerLintFinding[];
@@ -989,6 +1007,20 @@ export async function fetchCandidates(): Promise<ViewerCandidateRecord[]> {
     throw new Error(`Failed to load candidates: ${response.status} ${response.statusText}`);
   }
   return response.json() as Promise<ViewerCandidateRecord[]>;
+}
+
+export async function fetchMemoryTasks(): Promise<ViewerMemoryTaskSummary[]> {
+  if (embeddedData()) {
+    return [];
+  }
+  const response = await fetch("/api/memory-tasks");
+  if (response.status === 404) {
+    return [];
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to load memory tasks: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<ViewerMemoryTaskSummary[]>;
 }
 
 export async function applyCandidateAction(target: string, action: "promote" | "archive"): Promise<ViewerCandidateRecord> {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0
+
+- Added the Agent Memory Ledger — `swarmvault memory start|update|finish|list|show|resume` records durable task goals, decisions, graph evidence, changed paths, outcomes, and follow-ups under `state/memory/tasks/` with markdown companions in `wiki/memory/tasks/`
+- Added engine APIs and MCP tools for memory tasks: `startMemoryTask`, `updateMemoryTask`, `finishMemoryTask`, `listMemoryTasks`, `readMemoryTask`, `resumeMemoryTask`, plus `start_memory_task`, `update_memory_task`, `finish_memory_task`, `list_memory_tasks`, `read_memory_task`, `resume_memory_task`, and `swarmvault://memory-tasks`
+- Linked memory tasks into existing workflows with `--memory <id>` on `context build`, `query`, and `explore`, and made `memory start` create an initial context pack for the task
+- Added memory task and decision graph nodes with `uses_context`, `records_decision`, `touched`, `produced_output`, and `follows_up` relations, plus context-pack ranking boosts for directly related memory work and unresolved follow-ups
+- Added a graph viewer Memory dashboard backed by the existing workspace bundle/API, with task status filters, task detail, linked context pack counts, changed paths, and related graph navigation
+- Added the idempotent `swarmvault migrate --target 2.0.0` memory-ledger migration, refreshed the stability contract, package docs, website docs, OSS README trio, ClawHub skill bundle, and product `spec.md`, and bumped OSS packages plus MCP-facing version surfaces to `2.0.0`
+
 ## 1.5.0
 
 - Added agent context packs — `swarmvault context build "<goal>" --target <path-or-node> --budget <tokens>` now saves bounded evidence bundles under `state/context-packs/` with markdown companions in `wiki/context/`

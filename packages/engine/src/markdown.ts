@@ -819,7 +819,7 @@ export function buildIndexPage(
 }
 
 export function buildSectionIndex(
-  kind: "sources" | "code" | "concepts" | "entities" | "outputs" | "dashboards" | "candidates" | "graph",
+  kind: "sources" | "code" | "concepts" | "entities" | "outputs" | "memory" | "dashboards" | "candidates" | "graph",
   pages: GraphPage[],
   schemaHash: string,
   metadata: ManagedPageMetadata,

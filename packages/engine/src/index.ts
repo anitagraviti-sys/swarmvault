@@ -58,6 +58,19 @@ export {
 export type { ResolvedLargeRepoDefaults } from "./large-repo-defaults.js";
 export { LARGE_REPO_NODE_THRESHOLD, resolveLargeRepoDefaults } from "./large-repo-defaults.js";
 export { createMcpServer, startMcpServer } from "./mcp.js";
+export {
+  buildMemoryGraphElements,
+  ensureMemoryLedger,
+  finishMemoryTask,
+  listMemoryTasks,
+  loadMemoryTaskPages,
+  memoryTaskHashes,
+  readMemoryTask,
+  renderMemoryTaskMarkdown,
+  resumeMemoryTask,
+  startMemoryTask,
+  updateMemoryTask
+} from "./memory.js";
 export type { MigrationPlan, MigrationResult, MigrationStep, VaultVersionRecord } from "./migrate.js";
 export { ALL_MIGRATIONS, detectVaultVersion, planMigration, runMigration } from "./migrate.js";
 export type { LocalWhisperAdapterOptions, WhisperRunner, WhisperRunResult } from "./providers/local-whisper.js";

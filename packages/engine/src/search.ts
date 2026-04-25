@@ -77,6 +77,7 @@ function normalizeKind(value: unknown): PageKind | undefined {
     value === "entity" ||
     value === "output" ||
     value === "insight" ||
+    value === "memory_task" ||
     value === "graph_report" ||
     value === "community_summary"
     ? value
@@ -84,7 +85,14 @@ function normalizeKind(value: unknown): PageKind | undefined {
 }
 
 function normalizeStatus(value: unknown): PageStatus | undefined {
-  return value === "draft" || value === "candidate" || value === "active" || value === "archived" ? value : undefined;
+  return value === "draft" ||
+    value === "candidate" ||
+    value === "active" ||
+    value === "blocked" ||
+    value === "completed" ||
+    value === "archived"
+    ? value
+    : undefined;
 }
 
 function normalizeSourceType(value: unknown): SourceCaptureType | undefined {

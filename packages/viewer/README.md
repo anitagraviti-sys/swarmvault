@@ -2,7 +2,7 @@
 
 `@swarmvaultai/viewer` is the graph UI package for SwarmVault.
 
-It powers `swarmvault graph serve` and renders `state/graph.json` as an interactive graph of sources, concepts, and entities.
+It powers `swarmvault graph serve` and renders `state/graph.json` as an interactive graph of sources, concepts, entities, memory tasks, and decisions.
 
 ## What It Does
 
@@ -11,7 +11,9 @@ The viewer loads graph data from `/api/graph` and renders:
 - source nodes
 - concept nodes
 - entity nodes
+- memory task and decision nodes
 - extracted, inferred, conflicted, and stale edge states
+- the workflow rail for approvals, candidates, refresh state, lint findings, activity, and the Memory dashboard
 
 Its main purpose is to support the SwarmVault runtime, but the package also exports lightweight types and helpers for custom integrations.
 

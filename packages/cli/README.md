@@ -45,6 +45,7 @@ swarmvault graph share --bundle ./share-kit
 swarmvault benchmark
 swarmvault query "What keeps recurring?" --commit
 swarmvault context build "Ship this feature safely" --target ./src --budget 8000
+swarmvault memory start "Ship this feature safely" --target ./src --agent codex
 swarmvault query "Turn this into slides" --format slides
 swarmvault explore "What should I research next?" --steps 3
 swarmvault lint --deep
@@ -285,12 +286,24 @@ Build and manage agent-ready context packs from the compiled vault.
 
 - `context build "<goal>"` assembles relevant pages, graph nodes, edges, hyperedges, citations, and explicit omitted entries into a bounded bundle
 - `--target <path-or-node>` anchors the pack around a file, page id, node id, or graph label
+- `--memory <id>` links the newly built context pack to an active memory task
 - `--budget <tokens>` caps the estimated token budget; over-budget candidates are listed in `omittedItems`
 - `--format markdown|json|llms` controls the printed output shape, while every pack is still saved as JSON
 - saved artifacts live under `state/context-packs/`, with companion markdown pages under `wiki/context/`
 - `context list`, `context show <id>`, and `context delete <id>` manage saved packs
 
 Use this before handing work to an agent, starting a PR review, or preserving the evidence bundle behind a design/debugging decision.
+
+### `swarmvault memory start|update|finish|list|show|resume`
+
+Record a durable local task ledger for agent work.
+
+- `memory start "<goal>" --target <path-or-node>` creates `state/memory/tasks/<id>.json`, `wiki/memory/tasks/<id>.md`, updates `wiki/memory/index.md`, and builds an initial context pack
+- `memory update <id>` records notes, decisions, changed paths, context packs, sessions, sources, pages, nodes, git refs, or status changes
+- `memory finish <id> --outcome <text>` marks the task completed and can add one or more `--follow-up` entries
+- `memory list`, `memory show <id>`, and `memory resume <id> --format markdown|json|llms` expose the task history for the next agent
+
+`query`, `explore`, and `context build` also accept `--memory <id>` so saved outputs and context packs can attach to an active task.
 
 ### `swarmvault explore "<question>" [--steps <n>] [--format markdown|report|slides|chart|image]`
 
@@ -362,10 +375,16 @@ Run SwarmVault as a local MCP server over stdio. This exposes the vault to compa
 - `build_context_pack`
 - `list_context_packs`
 - `read_context_pack`
+- `start_memory_task`
+- `update_memory_task`
+- `finish_memory_task`
+- `list_memory_tasks`
+- `read_memory_task`
+- `resume_memory_task`
 
-`compile_vault` also accepts `maxTokens` for bounded wiki output, `blast_radius` traces reverse import impact for a file or module target, and `build_context_pack` creates the same bounded agent evidence bundles as `swarmvault context build`.
+`compile_vault` also accepts `maxTokens` for bounded wiki output, `blast_radius` traces reverse import impact for a file or module target, `build_context_pack` creates the same bounded agent evidence bundles as `swarmvault context build`, and the memory tools mirror `swarmvault memory`.
 
-The MCP surface also exposes `swarmvault://schema`, `swarmvault://sessions`, `swarmvault://sessions/{path}`, `swarmvault://context-packs`, and includes `schemaPath` in `workspace_info`.
+The MCP surface also exposes `swarmvault://schema`, `swarmvault://sessions`, `swarmvault://sessions/{path}`, `swarmvault://context-packs`, `swarmvault://memory-tasks`, and includes `schemaPath` in `workspace_info`.
 
 ### `swarmvault graph serve`
 

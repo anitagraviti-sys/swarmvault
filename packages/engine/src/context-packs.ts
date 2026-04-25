@@ -5,6 +5,7 @@ import { loadVaultConfig } from "./config.js";
 import { recordSession } from "./logs.js";
 import { estimateTokens } from "./token-estimation.js";
 import type {
+  AgentMemoryTask,
   BuildContextPackOptions,
   BuildContextPackResult,
   ContextPack,
@@ -115,6 +116,49 @@ function hyperedgeExcerpt(hyperedge: GraphHyperedge): string {
   return `Group pattern: ${hyperedge.relation}. Evidence: ${hyperedge.evidenceClass}. Confidence: ${hyperedge.confidence}. ${hyperedge.why}${sources}`;
 }
 
+function normalizeMemoryMatch(value: string | undefined): string {
+  return (value ?? "")
+    .trim()
+    .replace(/^wiki\//, "")
+    .replace(/^\.\//, "")
+    .toLowerCase();
+}
+
+function memoryTaskContextScore(task: AgentMemoryTask, options: BuildContextPackOptions): { reason: string; score: number } | null {
+  if (options.memoryTaskId && task.id === options.memoryTaskId) {
+    return { reason: "active memory task", score: 126 };
+  }
+
+  const target = normalizeMemoryMatch(options.target);
+  const goal = normalizeMemoryMatch(options.goal);
+  const taskTarget = normalizeMemoryMatch(task.target);
+  const directTarget =
+    target.length > 0 &&
+    ((taskTarget.length > 0 && (taskTarget.includes(target) || target.includes(taskTarget))) ||
+      task.changedPaths.some((changedPath) => {
+        const normalized = normalizeMemoryMatch(changedPath);
+        return normalized.length > 0 && (normalized.includes(target) || target.includes(normalized));
+      }));
+  if (directTarget) {
+    return { reason: "directly related memory task", score: task.status === "completed" ? 108 : 116 };
+  }
+
+  const taskText = normalizeMemoryMatch(`${task.goal} ${task.title} ${task.decisions.map((decision) => decision.text).join(" ")}`);
+  if (goal.length > 0 && taskText.includes(goal)) {
+    return { reason: "memory task matches goal", score: 96 };
+  }
+
+  if ((task.status === "active" || task.status === "blocked") && task.followUps.length) {
+    return { reason: "unresolved memory follow-ups", score: 90 };
+  }
+
+  if (task.decisions.length) {
+    return { reason: "recent memory decisions", score: 82 };
+  }
+
+  return null;
+}
+
 async function buildPageCandidate(rootDir: string, page: GraphPage, reason: string, score: number): Promise<ContextPackCandidate | null> {
   const stored = await readPage(rootDir, page.path);
   if (!stored) {
@@ -135,6 +179,53 @@ async function buildPageCandidate(rootDir: string, page: GraphPage, reason: stri
     edgeIds: [],
     freshness: page.freshness,
     confidence: page.confidence
+  };
+}
+
+function renderMemoryFallback(task: AgentMemoryTask): string {
+  return [
+    task.title,
+    `Goal: ${task.goal}`,
+    `Status: ${task.status}`,
+    task.target ? `Target: ${task.target}` : undefined,
+    task.decisions.length ? `Decisions: ${task.decisions.map((decision) => decision.text).join("; ")}` : undefined,
+    task.followUps.length ? `Follow-ups: ${task.followUps.join("; ")}` : undefined,
+    task.changedPaths.length ? `Changed paths: ${task.changedPaths.join(", ")}` : undefined,
+    task.outcome ? `Outcome: ${task.outcome}` : undefined
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+}
+
+async function buildMemoryTaskCandidate(
+  rootDir: string,
+  task: AgentMemoryTask,
+  reason: string,
+  score: number
+): Promise<ContextPackCandidate | null> {
+  const { paths } = await loadVaultConfig(rootDir);
+  const markdownPath = path.resolve(task.markdownPath);
+  const content = await fs.readFile(markdownPath, "utf8").catch(() => "");
+  const pathRef = isPathWithin(paths.wikiDir, markdownPath)
+    ? toPosix(path.relative(paths.wikiDir, markdownPath))
+    : toPosix(task.markdownPath);
+  const pageId = `memory:${task.id}`;
+  const decisionNodeIds = task.decisions.map((decision) => `decision:${task.id}:${decision.id}`);
+  return {
+    id: candidateId("page", pageId),
+    kind: "page",
+    title: task.title,
+    reason,
+    score,
+    excerpt: pageExcerpt(content || renderMemoryFallback(task)),
+    path: pathRef,
+    pageId,
+    sourceIds: task.sourceIds,
+    pageIds: uniqueStrings([pageId, ...task.pageIds]),
+    nodeIds: uniqueStrings([pageId, ...decisionNodeIds, ...task.nodeIds]),
+    edgeIds: [],
+    freshness: task.status === "completed" || task.status === "archived" ? "fresh" : "stale",
+    confidence: 1
   };
 }
 
@@ -471,6 +562,26 @@ export async function buildContextPack(rootDir: string, options: BuildContextPac
     }
   }
 
+  const memorySummaries = await import("./memory.js").then(({ listMemoryTasks }) => listMemoryTasks(rootDir)).catch(() => []);
+  const memorySummaryIds = uniqueStrings([
+    ...(options.memoryTaskId ? [options.memoryTaskId] : []),
+    ...memorySummaries.slice(0, 20).map((summary) => summary.id)
+  ]);
+  if (memorySummaryIds.length) {
+    const { readMemoryTask } = await import("./memory.js");
+    for (const taskId of memorySummaryIds) {
+      const task = await readMemoryTask(rootDir, taskId).catch(() => null);
+      if (!task) {
+        continue;
+      }
+      const scored = memoryTaskContextScore(task, options);
+      if (!scored) {
+        continue;
+      }
+      addCandidate(await buildMemoryTaskCandidate(rootDir, task, scored.reason, scored.score));
+    }
+  }
+
   for (const [index, pageId] of graphQuery.pageIds.entries()) {
     const page = pagesById.get(pageId);
     addCandidate(page ? await buildPageCandidate(rootDir, page, "graph traversal page", 100 - index) : null);
@@ -538,6 +649,10 @@ export async function buildContextPack(rootDir: string, options: BuildContextPac
       `Omitted: ${pack.omittedItems.length}`
     ]
   });
+  if (options.memoryTaskId) {
+    const { updateMemoryTask } = await import("./memory.js");
+    await updateMemoryTask(rootDir, options.memoryTaskId, { contextPackId: pack.id });
+  }
 
   return {
     pack,

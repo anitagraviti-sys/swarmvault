@@ -18,6 +18,7 @@ Expected shape:
 - prefers `wiki/graph/report.md` once compile exists
 - mentions `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, `wiki/graph/share-kit/`, `swarmvault graph share --post`, `swarmvault graph share --svg`, or `swarmvault graph share --bundle` when the user wants a copyable, visual, or portable summary
 - mentions `swarmvault context build`, `wiki/context/`, or `state/context-packs/` when the user asks for agent handoff or bounded review context
+- mentions `swarmvault memory`, `wiki/memory/`, or `state/memory/tasks/` when the user asks for durable task memory or handoff history
 
 ## Managed source prompt
 
@@ -57,6 +58,20 @@ Expected shape:
 - uses `swarmvault context build "<goal>" --target <path-or-node> --budget <tokens>`
 - points at both `wiki/context/` and `state/context-packs/`
 - mentions omitted items when the token budget is too small
+
+## Memory ledger prompt
+
+Prompt:
+
+> Start a durable task memory for the next agent working on auth, record a decision, and show how to resume it.
+
+Expected shape:
+
+- uses `swarmvault memory start "<goal>" --target <path-or-node>`
+- records a decision or note with `swarmvault memory update <id>`
+- points at both `wiki/memory/` and `state/memory/tasks/`
+- uses `swarmvault memory resume <id>` for the next-agent handoff
+- mentions that `query`, `explore`, and `context build` can attach to the task with `--memory <id>`
 
 ## Research prompt
 

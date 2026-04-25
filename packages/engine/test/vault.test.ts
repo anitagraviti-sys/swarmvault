@@ -2228,6 +2228,7 @@ describe("swarmvault workflow", () => {
     const tools = await client.listTools();
     expect(tools.tools.some((tool) => tool.name === "workspace_info")).toBe(true);
     expect(tools.tools.some((tool) => tool.name === "query_vault")).toBe(true);
+    expect(tools.tools.some((tool) => tool.name === "start_memory_task")).toBe(true);
 
     const workspaceInfo = await client.callTool({ name: "workspace_info", arguments: {} });
     const workspaceContent = workspaceInfo.content as ToolContent;
@@ -2249,6 +2250,37 @@ describe("swarmvault workflow", () => {
     const chartContent = chartQuery.content as ToolContent;
     expect(JSON.parse(chartContent[0]?.text ?? "{}").outputFormat).toBe("chart");
 
+    const memoryStart = await client.callTool({
+      name: "start_memory_task",
+      arguments: { goal: "Remember MCP task work", target: "notes.md", budgetTokens: 300, agent: "test-client" }
+    });
+    const memoryStartContent = memoryStart.content as ToolContent;
+    const memoryTaskId = JSON.parse(memoryStartContent[0]?.text ?? "{}").task.id as string;
+    expect(memoryTaskId).toBeTruthy();
+
+    const memoryUpdate = await client.callTool({
+      name: "update_memory_task",
+      arguments: { id: memoryTaskId, decision: "MCP memory tools mirror the CLI.", changedPath: "notes.md" }
+    });
+    expect(JSON.parse((memoryUpdate.content as ToolContent)[0]?.text ?? "{}").task.decisions.length).toBe(1);
+
+    const memoryFinish = await client.callTool({
+      name: "finish_memory_task",
+      arguments: { id: memoryTaskId, outcome: "MCP memory lifecycle passed.", followUp: "Compile memory graph nodes." }
+    });
+    expect(JSON.parse((memoryFinish.content as ToolContent)[0]?.text ?? "{}").task.status).toBe("completed");
+
+    const memoryList = await client.callTool({ name: "list_memory_tasks", arguments: {} });
+    expect(JSON.parse((memoryList.content as ToolContent)[0]?.text ?? "[]").some((task: { id: string }) => task.id === memoryTaskId)).toBe(
+      true
+    );
+
+    const memoryRead = await client.callTool({ name: "read_memory_task", arguments: { id: memoryTaskId } });
+    expect(JSON.parse((memoryRead.content as ToolContent)[0]?.text ?? "{}").id).toBe(memoryTaskId);
+
+    const memoryResume = await client.callTool({ name: "resume_memory_task", arguments: { id: memoryTaskId, format: "llms" } });
+    expect(JSON.parse((memoryResume.content as ToolContent)[0]?.text ?? "{}").rendered).toContain("Agent Memory Resume");
+
     const configResource = await client.readResource({ uri: "swarmvault://config" });
     expect(configResource.contents[0]?.uri).toBe("swarmvault://config");
     expect((configResource.contents[0] as { text: string }).text).toContain('"inboxDir"');
@@ -2259,6 +2291,9 @@ describe("swarmvault workflow", () => {
 
     const sessionsResource = await client.readResource({ uri: "swarmvault://sessions" });
     expect((sessionsResource.contents[0] as { text: string }).text).toContain("compile");
+
+    const memoryResource = await client.readResource({ uri: "swarmvault://memory-tasks" });
+    expect((memoryResource.contents[0] as { text: string }).text).toContain(memoryTaskId);
 
     // A failing tool handler (e.g. get_node with an unknown target) must not
     // crash the server. The safeHandler wrapper should return an MCP error

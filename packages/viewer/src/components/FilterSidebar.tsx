@@ -252,6 +252,8 @@ export function FilterSidebar({
             <select className="input" value={pageStatusFilter} onChange={(event) => onPageStatusChange(event.target.value)}>
               <option value="all">All</option>
               <option value="active">Active</option>
+              <option value="blocked">Blocked</option>
+              <option value="completed">Completed</option>
               <option value="candidate">Candidate</option>
               <option value="draft">Draft</option>
               <option value="archived">Archived</option>

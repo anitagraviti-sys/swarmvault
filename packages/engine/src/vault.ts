@@ -59,6 +59,7 @@ import {
   type ManagedGraphPageMetadata,
   type ManagedPageMetadata
 } from "./markdown.js";
+import { buildMemoryGraphElements, loadMemoryTaskPages, memoryTaskHashes, updateMemoryTask } from "./memory.js";
 import { runConfiguredRoles, summarizeRoleQuestions } from "./orchestration.js";
 import {
   buildOutputAssetManifest,
@@ -83,6 +84,7 @@ import { mergeSearchResults, rebuildSearchIndex, searchPages } from "./search.js
 import { ALL_SOURCE_CLASSES, aggregateManifestSourceClass } from "./source-classification.js";
 import { listGuidedSourceSessions, updateGuidedSourceSessionStatus } from "./source-sessions.js";
 import type {
+  AgentMemoryTask,
   ApprovalBundleType,
   ApprovalChangeType,
   ApprovalDetail,
@@ -1977,6 +1979,7 @@ function buildGraph(
   pages: GraphPage[],
   sourceProjects: Record<string, string | null>,
   _codeIndex: CodeIndexArtifact,
+  memoryTasks: AgentMemoryTask[] = [],
   options?: { communityResolution?: number; config?: VaultConfig | null }
 ): GraphArtifact {
   const manifestsById = new Map(manifests.map((manifest) => [manifest.sourceId, manifest]));
@@ -2391,13 +2394,15 @@ function buildGraph(
     }
   }
 
+  const memoryElements = buildMemoryGraphElements(memoryTasks, pages);
   const graphNodes = [
     ...sourceNodes,
     ...moduleMap.values(),
     ...symbolMap.values(),
     ...rationaleMap.values(),
     ...conceptMap.values(),
-    ...entityMap.values()
+    ...entityMap.values(),
+    ...memoryElements.nodes
   ];
   const repoDefaults = resolveLargeRepoDefaults({
     nodeCount: graphNodes.length,
@@ -2407,7 +2412,7 @@ function buildGraph(
     {
       generatedAt: new Date().toISOString(),
       nodes: graphNodes,
-      edges,
+      edges: [...edges, ...memoryElements.edges],
       communities: [],
       sources: manifests,
       pages
@@ -2846,8 +2851,11 @@ async function syncVaultArtifacts(
     sourceProjects: Record<string, string | null>;
     outputPages: GraphPage[];
     insightPages: GraphPage[];
+    memoryRecords: Array<{ page: GraphPage; content: string }>;
+    memoryTasks: AgentMemoryTask[];
     outputHashes: Record<string, string>;
     insightHashes: Record<string, string>;
+    memoryHashes: Record<string, string>;
     previousState: CompileState | null;
     approve?: boolean;
     promoteCandidates?: boolean;
@@ -3073,8 +3081,9 @@ async function syncVaultArtifacts(
   }
 
   const compiledPages = records.map((record) => record.page);
-  const basePages = [...compiledPages, ...input.outputPages, ...input.insightPages];
-  const structuralGraph = buildGraph(input.manifests, input.analyses, basePages, input.sourceProjects, input.codeIndex, {
+  const basePages = [...compiledPages, ...input.outputPages, ...input.insightPages, ...input.memoryRecords.map((record) => record.page)];
+  records.push(...input.memoryRecords);
+  const structuralGraph = buildGraph(input.manifests, input.analyses, basePages, input.sourceProjects, input.codeIndex, input.memoryTasks, {
     communityResolution: config.graph?.communityResolution,
     config
   });
@@ -3242,6 +3251,7 @@ async function syncVaultArtifacts(
     ["concepts/index.md", "concepts", activeConceptPages],
     ["entities/index.md", "entities", activeEntityPages],
     ["outputs/index.md", "outputs", allPages.filter((page) => page.kind === "output")],
+    ["memory/index.md", "memory", allPages.filter((page) => page.kind === "memory_task")],
     [
       "dashboards/index.md",
       "dashboards",
@@ -3346,6 +3356,7 @@ async function syncVaultArtifacts(
     sourceProjects: input.sourceProjects,
     outputHashes: input.outputHashes,
     insightHashes: input.insightHashes,
+    memoryHashes: input.memoryHashes,
     candidateHistory
   } satisfies CompileState);
   await rebuildSearchIndex(paths.searchDbPath, allPages, paths.wikiDir);
@@ -3939,6 +3950,7 @@ export async function refreshVaultAfterOutputSave(rootDir: string): Promise<void
   });
   const storedOutputs = await loadSavedOutputPages(paths.wikiDir);
   const storedInsights = await loadInsightPages(paths.wikiDir);
+  const storedMemoryPages = await loadMemoryTaskPages(rootDir);
   await syncVaultArtifacts(rootDir, {
     schemas,
     manifests,
@@ -3947,8 +3959,11 @@ export async function refreshVaultAfterOutputSave(rootDir: string): Promise<void
     sourceProjects,
     outputPages: storedOutputs.map((page) => page.page),
     insightPages: storedInsights.map((page) => page.page),
+    memoryRecords: storedMemoryPages.map((record) => ({ page: record.page, content: record.content })),
+    memoryTasks: storedMemoryPages.map((record) => record.task),
     outputHashes: pageHashes(storedOutputs),
     insightHashes: pageHashes(storedInsights),
+    memoryHashes: memoryTaskHashes(storedMemoryPages),
     previousState: await readJsonFile<CompileState>(paths.compileStatePath),
     approve: false,
     promoteCandidates: false
@@ -4561,7 +4576,6 @@ export async function runAutoPromotion(rootDir: string, options: { dryRun?: bool
       ...sessionBody.split("\n")
     ]
   });
-
   return {
     startedAt,
     finishedAt,
@@ -5100,10 +5114,14 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
   const sourceProjects = resolveSourceProjects(rootDir, manifests, config);
   const storedOutputPages = await loadSavedOutputPages(paths.wikiDir);
   const storedInsightPages = await loadInsightPages(paths.wikiDir);
+  const storedMemoryPages = await loadMemoryTaskPages(rootDir);
   const outputPages = storedOutputPages.map((page) => page.page);
   const insightPages = storedInsightPages.map((page) => page.page);
+  const memoryPages = storedMemoryPages.map((page) => page.page);
+  const memoryTasks = storedMemoryPages.map((page) => page.task);
   const currentOutputHashes = pageHashes(storedOutputPages);
   const currentInsightHashes = pageHashes(storedInsightPages);
+  const currentMemoryHashes = memoryTaskHashes(storedMemoryPages);
 
   const previousState = await readJsonFile<CompileState>(paths.compileStatePath);
   const rootSchemaChanged = !previousState || previousState.rootSchemaHash !== schemas.root.hash;
@@ -5120,12 +5138,14 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
   const previousSourceProjects = previousState?.sourceProjects ?? {};
   const previousOutputHashes = previousState?.outputHashes ?? {};
   const previousInsightHashes = previousState?.insightHashes ?? {};
+  const previousMemoryHashes = previousState?.memoryHashes ?? {};
   const currentSourceIds = new Set(manifests.map((item) => item.sourceId));
   const previousSourceIds = new Set(Object.keys(previousSourceHashes));
   const sourcesChanged =
     currentSourceIds.size !== previousSourceIds.size || [...currentSourceIds].some((sourceId) => !previousSourceIds.has(sourceId));
   const outputsChanged = !recordsEqual(currentOutputHashes, previousOutputHashes);
   const insightsChanged = !recordsEqual(currentInsightHashes, previousInsightHashes);
+  const memoryChanged = !recordsEqual(currentMemoryHashes, previousMemoryHashes);
   const artifactsExist = await requiredCompileArtifactsExist(paths);
   const pendingCandidatePromotion = Object.values(previousState?.candidateHistory ?? {}).some((entry) => entry.status === "candidate");
 
@@ -5156,6 +5176,7 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
     !sourcesChanged &&
     !outputsChanged &&
     !insightsChanged &&
+    !memoryChanged &&
     !pendingCandidatePromotion &&
     artifactsExist &&
     !options.approve
@@ -5173,7 +5194,7 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
       providerId: provider.id,
       success: true,
       relatedSourceIds: manifests.map((manifest) => manifest.sourceId),
-      relatedPageIds: graph?.pages.map((page) => page.id) ?? [...outputPages, ...insightPages].map((page) => page.id),
+      relatedPageIds: graph?.pages.map((page) => page.id) ?? [...outputPages, ...insightPages, ...memoryPages].map((page) => page.id),
       changedPages: [],
       lines: [
         `provider=${provider.id}`,
@@ -5182,13 +5203,14 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
         `clean=${manifests.length}`,
         `outputs=${outputPages.length}`,
         `insights=${insightPages.length}`,
+        `memory=${memoryPages.length}`,
         `schema=${schemas.effective.global.hash.slice(0, 12)}`,
         `benchmark=${benchmark.ok ? "ok" : `error:${benchmark.error}`}`
       ]
     });
     return {
       graphPath: paths.graphPath,
-      pageCount: graph?.pages.length ?? outputPages.length + insightPages.length,
+      pageCount: graph?.pages.length ?? outputPages.length + insightPages.length + memoryPages.length,
       changedPages: [],
       sourceCount: manifests.length,
       staged: false,
@@ -5269,8 +5291,11 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
     sourceProjects,
     outputPages,
     insightPages,
+    memoryRecords: storedMemoryPages.map((record) => ({ page: record.page, content: record.content })),
+    memoryTasks,
     outputHashes: currentOutputHashes,
     insightHashes: currentInsightHashes,
+    memoryHashes: currentMemoryHashes,
     previousState,
     approve: options.approve
   });
@@ -5382,6 +5407,7 @@ export async function compileVault(rootDir: string, options: CompileOptions = {}
       `clean=${clean.length}`,
       `outputs=${outputPages.length}`,
       `insights=${insightPages.length}`,
+      `memory=${memoryPages.length}`,
       `candidates=${sync.candidatePageCount}`,
       `promoted=${sync.promotedPageIds.length}`,
       `staged=${sync.staged}`,
@@ -5562,6 +5588,14 @@ export async function queryVault(rootDir: string, options: QueryOptions): Promis
       `rawSources=${query.relatedSourceIds.length}`
     ]
   });
+  if (options.memoryTaskId) {
+    await updateMemoryTask(rootDir, options.memoryTaskId, {
+      note: `Query: ${options.question}`,
+      pageId: savedPageId,
+      sourceId: query.relatedSourceIds[0],
+      nodeId: query.relatedNodeIds[0]
+    });
+  }
 
   return {
     answer: query.answer,
@@ -5827,6 +5861,14 @@ export async function exploreVault(rootDir: string, options: ExploreOptions): Pr
       `staged=${review}`
     ]
   });
+  if (options.memoryTaskId) {
+    await updateMemoryTask(rootDir, options.memoryTaskId, {
+      note: `Explore: ${options.question}`,
+      pageId: hubPage.id,
+      sourceId: [...relatedSourceIds][0],
+      nodeId: [...relatedNodeIds][0]
+    });
+  }
 
   return {
     rootQuestion: options.question,

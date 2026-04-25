@@ -9,6 +9,7 @@ import { FilterSidebar } from "./components/FilterSidebar";
 import { GraphCanvas } from "./components/GraphCanvas";
 import { GraphTools } from "./components/GraphTools";
 import { LintFindings } from "./components/LintFindings";
+import { MemoryDashboard } from "./components/MemoryDashboard";
 import { PagePreview } from "./components/PagePreview";
 import { PendingRefresh } from "./components/PendingRefresh";
 import { ReportTabs } from "./components/ReportTabs";
@@ -71,7 +72,7 @@ function persistRecentSearches(values: string[]): void {
 export function App() {
   const cyRef = useRef<Core | null>(null);
   const { state, refresh, loadApprovalDetail } = useWorkspaceStore();
-  const { graph, graphReport, approvals, approvalDetail, candidates, watchStatus, lintFindings, loading, errors } = state;
+  const { graph, graphReport, approvals, approvalDetail, candidates, memoryTasks, watchStatus, lintFindings, loading, errors } = state;
   const { theme, setTheme } = useTheme();
   const { route, navigate } = useHashRoute();
   const undo = useUndoBuffer();
@@ -217,7 +218,7 @@ export function App() {
     if (!eventStream.events.length) return;
     const latest = eventStream.events[0];
     if (!latest) return;
-    if (["compile", "ingest", "watch", "approval", "candidate", "lint"].includes(latest.type)) {
+    if (["compile", "ingest", "watch", "approval", "candidate", "memory", "lint"].includes(latest.type)) {
       void refresh();
     }
   }, [eventStream.events, refresh]);
@@ -493,6 +494,9 @@ export function App() {
       setWorkflowTab("approvals");
       setSelectedApprovalId(route.params.id);
     }
+    if (route.view === "memory") {
+      setWorkflowTab("memory");
+    }
   }, [route, openPagePath, navigateNode, activePage?.path]);
 
   const highlightSurprise = useCallback(async (sourceNodeId: string, targetNodeId: string) => {
@@ -570,6 +574,7 @@ export function App() {
       { id: "graph-path", label: "Focus graph path", section: "Graph", shortcut: "P", run: focusPathInput },
       { id: "open-approvals", label: "Open approvals tab", section: "Workflow", run: () => setWorkflowTab("approvals") },
       { id: "open-candidates", label: "Open candidates tab", section: "Workflow", run: () => setWorkflowTab("candidates") },
+      { id: "open-memory", label: "Open memory tab", section: "Workflow", run: () => setWorkflowTab("memory") },
       { id: "open-refresh", label: "Open refresh tab", section: "Workflow", run: () => setWorkflowTab("refresh") },
       { id: "open-activity", label: "Open activity tab", section: "Workflow", run: () => setWorkflowTab("activity") },
       { id: "open-lint", label: "Open lint tab", section: "Workflow", run: () => setWorkflowTab("lint") },
@@ -786,6 +791,7 @@ export function App() {
           tabs={[
             { id: "approvals", label: "Approvals", count: approvals.reduce((t, a) => t + a.pendingCount, 0) },
             { id: "candidates", label: "Candidates", count: candidates.length },
+            { id: "memory", label: "Memory", count: memoryTasks.length },
             { id: "refresh", label: "Refresh", count: watchStatus?.pendingSemanticRefresh.length ?? 0 },
             { id: "activity", label: "Activity", count: eventStream.events.length },
             { id: "lint", label: "Lint", count: lintFindings.length }
@@ -818,6 +824,14 @@ export function App() {
               onCandidateAction={(target, action, nextPath) => void handleCandidateAction(target, action, nextPath)}
               onBulkCandidateAction={(targets, action) => void handleBulkCandidateAction(targets, action)}
               onOpenPage={openPagePath}
+            />
+          )}
+          {workflowTab === "memory" && (
+            <MemoryDashboard
+              tasks={memoryTasks}
+              memoryError={errors.memory ?? null}
+              onOpenPage={openPagePath}
+              onNavigateNode={navigateNode}
             />
           )}
           {workflowTab === "refresh" && <PendingRefresh watchStatus={watchStatus} watchError={errors.watch ?? null} />}

@@ -44,7 +44,14 @@ export function normalizeSourceSemanticHashes(value: unknown): Record<string, st
 }
 
 export function normalizePageStatus(value: unknown, fallback: PageStatus = "active"): PageStatus {
-  return value === "draft" || value === "candidate" || value === "active" || value === "archived" ? value : fallback;
+  return value === "draft" ||
+    value === "candidate" ||
+    value === "active" ||
+    value === "blocked" ||
+    value === "completed" ||
+    value === "archived"
+    ? value
+    : fallback;
 }
 
 export function normalizePageManager(value: unknown, fallback: PageManager = "system"): PageManager {
@@ -148,7 +155,8 @@ export function inferPageKind(relativePath: string, explicitKind: unknown = unde
     explicitKind === "concept" ||
     explicitKind === "entity" ||
     explicitKind === "output" ||
-    explicitKind === "insight"
+    explicitKind === "insight" ||
+    explicitKind === "memory_task"
   ) {
     return explicitKind;
   }
@@ -171,6 +179,9 @@ export function inferPageKind(relativePath: string, explicitKind: unknown = unde
   }
   if (normalized.startsWith("insights/")) {
     return "insight";
+  }
+  if (normalized.startsWith("memory/tasks/")) {
+    return "memory_task";
   }
   return "index";
 }

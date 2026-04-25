@@ -52,7 +52,17 @@ export const agentTypeSchema = z.enum([
 ]);
 export type AgentType = z.infer<typeof agentTypeSchema>;
 
-export type PageKind = "index" | "source" | "module" | "concept" | "entity" | "output" | "insight" | "graph_report" | "community_summary";
+export type PageKind =
+  | "index"
+  | "source"
+  | "module"
+  | "concept"
+  | "entity"
+  | "output"
+  | "insight"
+  | "memory_task"
+  | "graph_report"
+  | "community_summary";
 export type Freshness = "fresh" | "stale";
 /**
  * Consolidation tier for insight pages (LLM Wiki v2 memory model).
@@ -72,9 +82,11 @@ export type OutputOrigin = "query" | "explore" | "source_brief" | "source_review
 export type OutputFormat = "markdown" | "report" | "slides" | "chart" | "image";
 export type ContextPackFormat = "markdown" | "json" | "llms";
 export type ContextPackItemKind = "page" | "node" | "edge" | "hyperedge";
+export type AgentMemoryTaskStatus = "active" | "blocked" | "completed" | "archived";
+export type AgentMemoryResumeFormat = "markdown" | "json" | "llms";
 export type OutputAssetRole = "primary" | "preview" | "manifest" | "poster";
 export type GraphExportFormat = "html" | "html-standalone" | "report" | "svg" | "graphml" | "cypher" | "json" | "obsidian" | "canvas";
-export type PageStatus = "draft" | "candidate" | "active" | "archived";
+export type PageStatus = "draft" | "candidate" | "active" | "blocked" | "completed" | "archived";
 export type PageManager = "system" | "human";
 export type ApprovalEntryStatus = "pending" | "accepted" | "rejected";
 export type ApprovalChangeType = "create" | "update" | "delete" | "promote";
@@ -828,7 +840,7 @@ export interface SourceAnalysis {
 
 export interface GraphNode {
   id: string;
-  type: "source" | "concept" | "entity" | "module" | "symbol" | "rationale";
+  type: "source" | "concept" | "entity" | "module" | "symbol" | "rationale" | "memory_task" | "decision";
   label: string;
   /** Lowercased NFKD-normalized label (diacritic-insensitive) for lexical matching. */
   normLabel?: string;
@@ -1108,12 +1120,107 @@ export interface BuildContextPackOptions {
   target?: string;
   budgetTokens?: number;
   format?: ContextPackFormat;
+  memoryTaskId?: string;
 }
 
 export interface BuildContextPackResult {
   pack: ContextPack;
   artifactPath: string;
   markdownPath: string;
+  rendered: string;
+}
+
+export interface AgentMemoryNote {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface AgentMemoryDecision {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface AgentMemoryTask {
+  id: string;
+  title: string;
+  goal: string;
+  status: AgentMemoryTaskStatus;
+  target?: string;
+  agent?: string;
+  createdAt: string;
+  updatedAt: string;
+  contextPackIds: string[];
+  sessionIds: string[];
+  sourceIds: string[];
+  pageIds: string[];
+  nodeIds: string[];
+  changedPaths: string[];
+  gitRefs: string[];
+  notes: AgentMemoryNote[];
+  decisions: AgentMemoryDecision[];
+  outcome?: string;
+  followUps: string[];
+  artifactPath: string;
+  markdownPath: string;
+}
+
+export interface AgentMemoryTaskSummary {
+  id: string;
+  title: string;
+  goal: string;
+  status: AgentMemoryTaskStatus;
+  target?: string;
+  agent?: string;
+  createdAt: string;
+  updatedAt: string;
+  contextPackIds: string[];
+  changedPaths: string[];
+  decisionCount: number;
+  followUpCount: number;
+  artifactPath: string;
+  markdownPath: string;
+}
+
+export interface StartMemoryTaskOptions {
+  goal: string;
+  target?: string;
+  budgetTokens?: number;
+  agent?: string;
+  contextPackId?: string;
+}
+
+export interface UpdateMemoryTaskOptions {
+  note?: string;
+  decision?: string;
+  changedPath?: string;
+  contextPackId?: string;
+  sessionId?: string;
+  sourceId?: string;
+  pageId?: string;
+  nodeId?: string;
+  gitRef?: string;
+  status?: AgentMemoryTaskStatus;
+}
+
+export interface FinishMemoryTaskOptions {
+  outcome: string;
+  followUp?: string;
+}
+
+export interface AgentMemoryTaskResult {
+  task: AgentMemoryTask;
+  artifactPath: string;
+  markdownPath: string;
+}
+
+export interface ResumeMemoryTaskOptions {
+  format?: AgentMemoryResumeFormat;
+}
+
+export interface ResumeMemoryTaskResult {
+  task: AgentMemoryTask;
   rendered: string;
 }
 
@@ -1273,6 +1380,7 @@ export interface QueryOptions {
   format?: OutputFormat;
   review?: boolean;
   gapFill?: boolean;
+  memoryTaskId?: string;
 }
 
 export interface QueryResult {
@@ -1504,6 +1612,7 @@ export interface CompileState {
   sourceProjects: Record<string, string | null>;
   outputHashes: Record<string, string>;
   insightHashes: Record<string, string>;
+  memoryHashes?: Record<string, string>;
   candidateHistory: Record<
     string,
     {
@@ -1536,6 +1645,7 @@ export interface ExploreOptions {
   format?: OutputFormat;
   review?: boolean;
   gapFill?: boolean;
+  memoryTaskId?: string;
 }
 
 export interface ExploreStepResult {

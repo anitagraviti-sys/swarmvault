@@ -10,6 +10,7 @@ import mime from "mime-types";
 import { loadVaultConfig } from "./config.js";
 import { buildViewerGraphArtifact } from "./graph-presentation.js";
 import { ingestInput } from "./ingest.js";
+import { listMemoryTasks } from "./memory.js";
 import { normalizeOutputAssets } from "./pages.js";
 import { searchPages } from "./search.js";
 import type { GraphArtifact, GraphReportArtifact, LintFinding } from "./types.js";
@@ -351,6 +352,13 @@ export async function startGraphServer(
         return;
       }
 
+      if (url.pathname === "/api/memory-tasks" && request.method === "GET") {
+        const tasks = await listMemoryTasks(rootDir);
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(tasks));
+        return;
+      }
+
       if (url.pathname === "/api/candidate" && request.method === "POST") {
         const body = await readJsonBody(request);
         const target = typeof body.target === "string" ? body.target : "";
@@ -381,11 +389,12 @@ export async function startGraphServer(
 
       if (url.pathname === "/api/workspace") {
         const reportPath = path.join(paths.wikiDir, "graph", "report.json");
-        const [graphRaw, reportRaw, approvalsRaw, candidatesRaw, watchStatusRaw, lintRaw] = await Promise.all([
+        const [graphRaw, reportRaw, approvalsRaw, candidatesRaw, memoryTasksRaw, watchStatusRaw, lintRaw] = await Promise.all([
           readJsonFile<GraphArtifact>(paths.graphPath).catch(() => null),
           readJsonFile<GraphReportArtifact>(reportPath).catch(() => null),
           listApprovals(rootDir).catch(() => []),
           listCandidates(rootDir).catch(() => []),
+          listMemoryTasks(rootDir).catch(() => []),
           getWatchStatus(rootDir).catch(() => ({ generatedAt: "", watchedRepoRoots: [], pendingSemanticRefresh: [] })),
           lintVault(rootDir).catch(() => [] as LintFinding[])
         ]);
@@ -397,6 +406,7 @@ export async function startGraphServer(
             graphReport: reportRaw ?? null,
             approvals: approvalsRaw,
             candidates: candidatesRaw,
+            memoryTasks: memoryTasksRaw,
             watchStatus: watchStatusRaw,
             lintFindings: toViewerLintFindings(lintRaw)
           })

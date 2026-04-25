@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
 import { initWorkspace } from "./config.js";
+import { ensureMemoryLedger } from "./memory.js";
 
 export interface MigrationStepContext {
   rootDir: string;
@@ -195,12 +196,31 @@ const MIGRATION_REBUILD_SEARCH_INDEX: MigrationStep = {
   }
 };
 
+const MIGRATION_ADD_MEMORY_LEDGER: MigrationStep = {
+  id: "1.5-to-2.0-add-memory-ledger",
+  fromVersion: "1.5.0",
+  toVersion: "2.0.0",
+  description: "Create the Agent Memory ledger directories and wiki index without modifying existing context packs.",
+  async apply(ctx, options) {
+    if (options.dryRun) {
+      return {
+        changed: [
+          relFromRoot(ctx.rootDir, path.join(ctx.paths.stateDir, "memory", "tasks")),
+          relFromRoot(ctx.rootDir, path.join(ctx.paths.wikiDir, "memory", "index.md"))
+        ]
+      };
+    }
+    return await ensureMemoryLedger(ctx.rootDir);
+  }
+};
+
 export const ALL_MIGRATIONS: readonly MigrationStep[] = [
   MIGRATION_ADD_DECAY_FIELDS,
   MIGRATION_ADD_TIER_DEFAULT,
   MIGRATION_ADD_TAGS_FIELD,
   MIGRATION_NOTE_WATCH_BLOCK,
-  MIGRATION_REBUILD_SEARCH_INDEX
+  MIGRATION_REBUILD_SEARCH_INDEX,
+  MIGRATION_ADD_MEMORY_LEDGER
 ];
 
 function compareSemver(a: string, b: string): number {

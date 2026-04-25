@@ -7,6 +7,7 @@ import { z } from "zod";
 import { loadVaultConfig } from "./config.js";
 import { buildContextPack, listContextPacks, readContextPack } from "./context-packs.js";
 import { ingestInputDetailed, listManifests } from "./ingest.js";
+import { finishMemoryTask, listMemoryTasks, readMemoryTask, resumeMemoryTask, startMemoryTask, updateMemoryTask } from "./memory.js";
 import { runMigration } from "./migrate.js";
 import { loadVaultSchema } from "./schema.js";
 import type { GraphArtifact } from "./types.js";
@@ -38,7 +39,7 @@ import {
 } from "./vault.js";
 import { getWatchStatus } from "./watch.js";
 
-const SERVER_VERSION = "1.5.0";
+const SERVER_VERSION = "2.0.0";
 
 export async function createMcpServer(rootDir: string): Promise<McpServer> {
   const server = new McpServer({
@@ -277,6 +278,102 @@ export async function createMcpServer(rootDir: string): Promise<McpServer> {
         return asToolError(`Context pack not found: ${id}`);
       }
       return asToolText(pack);
+    })
+  );
+
+  server.registerTool(
+    "start_memory_task",
+    {
+      description: "Start a durable SwarmVault agent memory task and build its initial context pack.",
+      inputSchema: {
+        goal: z.string().min(1).describe("Task goal to preserve in agent memory"),
+        target: z.string().optional().describe("Optional page, node, path, project, or label to anchor the initial context pack"),
+        budgetTokens: z.number().int().min(200).optional().describe("Approximate token budget for the initial context pack"),
+        agent: z.string().optional().describe("Agent name to record on the task"),
+        contextPackId: z.string().optional().describe("Existing context pack id to attach instead of building a new one")
+      }
+    },
+    safeHandler(async ({ goal, target, budgetTokens, agent, contextPackId }) => {
+      return asToolText(await startMemoryTask(rootDir, { goal, target, budgetTokens, agent, contextPackId }));
+    })
+  );
+
+  server.registerTool(
+    "update_memory_task",
+    {
+      description: "Append a note, decision, path, context pack, or status change to a SwarmVault memory task.",
+      inputSchema: {
+        id: z.string().min(1).describe("Memory task id"),
+        note: z.string().optional().describe("Task note to append"),
+        decision: z.string().optional().describe("Decision to append"),
+        changedPath: z.string().optional().describe("Changed file or wiki path to attach"),
+        contextPackId: z.string().optional().describe("Context pack id to attach"),
+        sessionId: z.string().optional().describe("Session id to attach"),
+        sourceId: z.string().optional().describe("Source id to attach"),
+        pageId: z.string().optional().describe("Page id to attach"),
+        nodeId: z.string().optional().describe("Graph node id to attach"),
+        gitRef: z.string().optional().describe("Git ref to attach"),
+        status: z.enum(["active", "blocked", "completed", "archived"]).optional().describe("Task status")
+      }
+    },
+    safeHandler(async ({ id, ...options }) => {
+      return asToolText(await updateMemoryTask(rootDir, id, options));
+    })
+  );
+
+  server.registerTool(
+    "finish_memory_task",
+    {
+      description: "Finish a SwarmVault memory task with an outcome and optional follow-up.",
+      inputSchema: {
+        id: z.string().min(1).describe("Memory task id"),
+        outcome: z.string().min(1).describe("Outcome to record"),
+        followUp: z.string().optional().describe("Follow-up to preserve for the next agent")
+      }
+    },
+    safeHandler(async ({ id, outcome, followUp }) => {
+      return asToolText(await finishMemoryTask(rootDir, id, { outcome, followUp }));
+    })
+  );
+
+  server.registerTool(
+    "list_memory_tasks",
+    {
+      description: "List saved SwarmVault agent memory tasks."
+    },
+    safeHandler(async () => {
+      return asToolText(await listMemoryTasks(rootDir));
+    })
+  );
+
+  server.registerTool(
+    "read_memory_task",
+    {
+      description: "Read a saved SwarmVault agent memory task by id.",
+      inputSchema: {
+        id: z.string().min(1).describe("Memory task id")
+      }
+    },
+    safeHandler(async ({ id }) => {
+      const task = await readMemoryTask(rootDir, id);
+      if (!task) {
+        return asToolError(`Memory task not found: ${id}`);
+      }
+      return asToolText(task);
+    })
+  );
+
+  server.registerTool(
+    "resume_memory_task",
+    {
+      description: "Render a saved SwarmVault memory task as a next-agent handoff.",
+      inputSchema: {
+        id: z.string().min(1).describe("Memory task id"),
+        format: z.enum(["markdown", "json", "llms"]).optional().describe("Rendered output format")
+      }
+    },
+    safeHandler(async ({ id, format }) => {
+      return asToolText(await resumeMemoryTask(rootDir, id, { format }));
     })
   );
 
@@ -545,6 +642,19 @@ export async function createMcpServer(rootDir: string): Promise<McpServer> {
     },
     async () => {
       return asTextResource("swarmvault://context-packs", JSON.stringify(await listContextPacks(rootDir), null, 2));
+    }
+  );
+
+  server.registerResource(
+    "swarmvault-memory-tasks",
+    "swarmvault://memory-tasks",
+    {
+      title: "SwarmVault Agent Memory Tasks",
+      description: "Saved git-backed agent memory task ledger entries.",
+      mimeType: "application/json"
+    },
+    async () => {
+      return asTextResource("swarmvault://memory-tasks", JSON.stringify(await listMemoryTasks(rootDir), null, 2));
     }
   );
 

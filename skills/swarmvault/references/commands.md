@@ -45,6 +45,11 @@ swarmvault context build "<goal>" --target ./src --budget 8000
 swarmvault context build "<goal>" --target concept:auth --format llms
 swarmvault context list
 swarmvault context show <context-pack-id>
+swarmvault memory start "<goal>" --target ./src --agent codex
+swarmvault memory update <memory-task-id> --decision "Keep the change local-first"
+swarmvault memory update <memory-task-id> --changed-path packages/engine/src/memory.ts
+swarmvault memory finish <memory-task-id> --outcome "Task completed" --follow-up "Run release smoke"
+swarmvault memory resume <memory-task-id> --format llms
 swarmvault explore "<question>" --steps 3
 swarmvault lint
 swarmvault lint --conflicts

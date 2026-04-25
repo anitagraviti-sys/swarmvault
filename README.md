@@ -30,6 +30,7 @@ swarmvault graph share --post
 swarmvault graph share --svg ./share-card.svg
 swarmvault graph share --bundle ./share-kit
 swarmvault context build "Ship this feature safely" --target ./src
+swarmvault memory start "Ship this feature safely" --target ./src
 ```
 
 No repo handy? Try the built-in demo — creates a sample vault with three sources and opens the graph viewer:
@@ -50,6 +51,7 @@ That single command initializes a vault, ingests sources, compiles a knowledge g
 - **Graph report** — surprise scoring, god nodes, community detection, plain-English explanations
 - **Share kit** — `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, `wiki/graph/share-kit/`, `swarmvault graph share --post`, `swarmvault graph share --svg`, and `swarmvault graph share --bundle` for copyable, visual, and HTML-preview first-run summaries
 - **Context packs** — `swarmvault context build "<goal>"` writes a cited, token-bounded agent handoff under `wiki/context/` plus `state/context-packs/`
+- **Agent memory ledger** — `swarmvault memory start|update|finish|resume` records durable local task history under `wiki/memory/` plus `state/memory/`
 
 ### Three-Layer Architecture
 
@@ -90,6 +92,7 @@ If you liked Karpathy's [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf
 | Interactive graph viewer | — | **yes** |
 | Visual + post-ready share kit | — | **yes** |
 | Agent-ready context packs | — | **yes** |
+| Agent memory ledger | — | **yes** |
 | 30+ input formats | — | **yes** |
 | Code-aware (tree-sitter AST) | — | **yes** |
 | Offline / no API keys | — | **yes** |
@@ -164,6 +167,7 @@ swarmvault graph share --bundle ./share-kit
 swarmvault graph blast ./src/index.ts
 swarmvault query "What is the auth flow?"
 swarmvault context build "Implement the auth refactor" --target ./src --budget 8000
+swarmvault memory start "Implement the auth refactor" --target ./src --agent codex
 swarmvault graph serve
 swarmvault graph export --report ./exports/report.html
 swarmvault graph export --obsidian ./exports/graph-vault
@@ -172,7 +176,7 @@ swarmvault graph push neo4j --dry-run
 
 Need the fastest first pass over a local repo or docs tree? `swarmvault scan ./path --no-serve` initializes the current directory as a vault, ingests that directory, compiles it, and skips opening the graph viewer when you only want the artifacts. It also leaves `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, and `wiki/graph/share-kit/` behind so you can run `swarmvault graph share --post` for compact text, `swarmvault graph share --svg ./share-card.svg` for a visual card, or `swarmvault graph share --bundle ./share-kit` for a portable folder with markdown, post text, SVG, a self-contained HTML preview, and JSON metadata.
 
-Need to hand bounded context to an agent? `swarmvault context build "Ship this feature safely" --target ./src --budget 8000` combines graph traversal, local search hits, freshness, evidence classes, and citations into a saved context pack. Use `--format llms` for an `llms.txt`-style handoff, `context list` to find prior packs, and `context show <id>` to replay one.
+Need to hand bounded context to an agent? `swarmvault context build "Ship this feature safely" --target ./src --budget 8000` combines graph traversal, local search hits, freshness, evidence classes, and citations into a saved context pack. Use `--format llms` for an `llms.txt`-style handoff, `context list` to find prior packs, and `context show <id>` to replay one. For longer-running work, `swarmvault memory start "<goal>" --target <path-or-node>` creates a durable task ledger, `memory update` records notes, decisions, changed paths, and linked packs, and `memory resume <id>` prints the next-agent handoff.
 
 Want the minimal LLM-Wiki starter instead? `swarmvault init --lite` creates just `raw/`, `wiki/`, `wiki/index.md`, `wiki/log.md`, and `swarmvault.schema.md` — no config, no state, no agent installs. Your agent maintains the wiki directly. Upgrade with `swarmvault init` later when you want graph, search, and approvals.
 
@@ -380,6 +384,8 @@ That installs the published `SKILL.md` plus a ClawHub README, examples, referenc
 
 **Agent context packs** - `swarmvault context build "<goal>" --target <path|node|page>` writes a cited, token-bounded handoff for coding or research agents. Packs include graph orientation, included evidence, explicit omissions when the budget is too small, and durable artifacts under `wiki/context/` plus `state/context-packs/`.
 
+**Agent memory ledger** - `swarmvault memory start|update|finish|resume` records task goals, linked context packs, decisions, graph evidence, touched paths, outcomes, and follow-ups as git-friendly JSON plus markdown under `state/memory/tasks/` and `wiki/memory/tasks/`. Compile includes memory tasks and decisions in the graph, and the viewer exposes a Memory dashboard.
+
 **Reviewable changes** - `compile --approve` stages changes into approval bundles. New concepts and entities land in `wiki/candidates/` first. Nothing mutates silently.
 
 **Configurable profiles** - compose vault behavior with `profile.presets`, `profile.dashboardPack`, `profile.guidedSessionMode`, `profile.guidedIngestDefault`, `profile.deepLintDefault`, and `profile.dataviewBlocks` in `swarmvault.config.json` instead of waiting for hardcoded product modes. `personal-research` is a built-in preset alias.
@@ -412,7 +418,7 @@ That installs the published `SKILL.md` plus a ClawHub README, examples, referenc
 
 **16 agent integrations** - install rules for Codex, Claude Code, Cursor, Goose, Pi, Gemini CLI, OpenCode, Aider, GitHub Copilot CLI, Trae, Claw/OpenClaw, Droid, Kiro, Hermes, Google Antigravity, and VS Code Copilot Chat. Optional graph-first hooks bias supported agents toward the wiki before broad search.
 
-**MCP server** - `swarmvault mcp` exposes the vault to any compatible agent client over stdio.
+**MCP server** - `swarmvault mcp` exposes the vault to any compatible agent client over stdio, including context-pack and memory-task tools.
 
 **Built-in browser clipper** - `graph serve` exposes a local `/api/bookmarklet` page and `/api/clip` endpoint so a running vault can capture the current browser URL with one click.
 
