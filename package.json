@@ -26,6 +26,7 @@
     "live:smoke:anthropic": "node ./scripts/live-smoke.mjs --lane anthropic",
     "live:oss:corpus": "node ./scripts/live-oss-corpus.mjs",
     "release:preflight": "node ./scripts/release-preflight.mjs",
+    "release:publish": "node ./scripts/release-publish.mjs",
     "skill:publish": "node ./scripts/publish-clawhub-skill.mjs",
     "skill:inspect": "clawhub inspect swarmvault --files",
     "prepare": "lefthook install"

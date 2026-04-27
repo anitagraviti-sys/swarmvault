@@ -152,7 +152,8 @@ try {
     const compile = await runCliJson(["compile"]);
     assert.ok(compile.sourceCount >= 1, "compile did not report any sources");
     await assertExists(path.join(workspaceDir, "state", "graph.json"));
-    await assertExists(path.join(workspaceDir, "state", "search.sqlite"));
+    await assertExists(path.join(workspaceDir, "state", "retrieval", "fts-000.sqlite"));
+    await assertExists(path.join(workspaceDir, "state", "retrieval", "manifest.json"));
     await assertExists(path.join(workspaceDir, "wiki", "index.md"));
     const defaultShareSvgPath = path.join(workspaceDir, "wiki", "graph", "share-card.svg");
     await assertExists(defaultShareSvgPath);
@@ -526,7 +527,8 @@ try {
         assert.equal(githubSource.source.status, "ready", "public GitHub source add did not finish in a ready state");
         assert.ok(Array.isArray(githubSource.source.sourceIds) && githubSource.source.sourceIds.length > 0, "public GitHub source add did not track any source ids");
         await assertExists(path.join(workspaceDir, "state", "graph.json"));
-        await assertExists(path.join(workspaceDir, "state", "search.sqlite"));
+        await assertExists(path.join(workspaceDir, "state", "retrieval", "fts-000.sqlite"));
+        await assertExists(path.join(workspaceDir, "state", "retrieval", "manifest.json"));
         await assertExists(githubSource.source.briefPath);
         const listed = await runCliJson(["source", "list"]);
         const entry = listed.find((item) => item.id === githubSource.source.id);

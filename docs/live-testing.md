@@ -74,6 +74,13 @@ Use `pnpm pack` for local tarball preflight installs. Raw `npm pack` preserves w
 
 `pnpm release:preflight` is the default local release gate. It runs `check`, `test`, `build`, the site build, the skill dry-run, then validates the installed-package path with local tarballs through heuristic smoke, browser smoke, and the OSS corpus.
 
+`pnpm release:publish` is the maintainer publish orchestrator. It verifies version sync and the pushed OSS tag, runs `release:preflight`, publishes `@swarmvaultai/viewer`, `@swarmvaultai/engine`, and `@swarmvaultai/cli` to npm, reruns the live npm-installed smoke lanes, publishes and inspects the ClawHub skill, refreshes/tags/pushes the desktop repo, and creates the GitHub release. Use a dry run to inspect the sequence before touching remote state:
+
+```bash
+pnpm release:publish -- --dry-run --skip-preflight
+pnpm release:publish -- --otp <npm-2fa-code>
+```
+
 The OSS corpus runner also validates the **installed npm package path**. It clones a pinned set of small public repositories, installs the published CLI into an isolated prefix and npm cache, and runs `init`, repo ingest, compile, benchmark, graph query, query, and graph export against those repos.
 
 The default gated corpus is intentionally small to keep provider cost and run time bounded:
