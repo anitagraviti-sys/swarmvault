@@ -3,6 +3,7 @@ import path from "node:path";
 import matter from "gray-matter";
 import { initWorkspace } from "./config.js";
 import { ensureMemoryLedger } from "./memory.js";
+import { ensureDir } from "./utils.js";
 
 export interface MigrationStepContext {
   rootDir: string;
@@ -214,13 +215,112 @@ const MIGRATION_ADD_MEMORY_LEDGER: MigrationStep = {
   }
 };
 
+const MIGRATION_3_0_RETRIEVAL_AND_TASKS: MigrationStep = {
+  id: "2.0-to-3.0-retrieval-and-task-surface",
+  fromVersion: "2.0.0",
+  toVersion: "3.0.0",
+  description:
+    "Move search config into retrieval, create state/retrieval, remove the legacy search index, and add task aliases to memory frontmatter.",
+  async apply(ctx, options) {
+    const changed: string[] = [];
+    const configPath = path.join(ctx.rootDir, "swarmvault.config.json");
+    try {
+      const raw = await fs.readFile(configPath, "utf8");
+      const config = JSON.parse(raw) as {
+        search?: { hybrid?: boolean; rerank?: boolean };
+        retrieval?: Record<string, unknown>;
+        tasks?: { embeddingProvider?: string };
+      };
+      let mutated = false;
+      if (config.search) {
+        config.retrieval = {
+          backend: "sqlite",
+          shardSize: 25000,
+          hybrid: config.search.hybrid ?? true,
+          rerank: config.search.rerank ?? false,
+          ...(config.tasks?.embeddingProvider && !config.retrieval?.embeddingProvider
+            ? { embeddingProvider: config.tasks.embeddingProvider }
+            : {}),
+          ...(config.retrieval ?? {})
+        };
+        delete config.search;
+        mutated = true;
+      } else if (!config.retrieval) {
+        config.retrieval = {
+          backend: "sqlite",
+          shardSize: 25000,
+          hybrid: true,
+          rerank: false,
+          ...(config.tasks?.embeddingProvider ? { embeddingProvider: config.tasks.embeddingProvider } : {})
+        };
+        mutated = true;
+      }
+      if (mutated) {
+        if (!options.dryRun) {
+          await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+        }
+        changed.push(relFromRoot(ctx.rootDir, configPath));
+      }
+    } catch {
+      // Older lite vaults may not have a config file yet.
+    }
+
+    const retrievalDir = path.join(ctx.paths.stateDir, "retrieval");
+    if (!options.dryRun) {
+      await ensureDir(retrievalDir);
+    }
+    changed.push(relFromRoot(ctx.rootDir, retrievalDir));
+
+    const legacySearchPath = path.join(ctx.paths.stateDir, "search.sqlite");
+    try {
+      await fs.access(legacySearchPath);
+      if (!options.dryRun) {
+        await fs.rm(legacySearchPath, { force: true });
+      }
+      changed.push(relFromRoot(ctx.rootDir, legacySearchPath));
+    } catch {
+      // No legacy index present.
+    }
+
+    const memoryTaskDir = path.join(ctx.paths.wikiDir, "memory", "tasks");
+    const files = await walkMarkdownFiles(memoryTaskDir);
+    for (const filePath of files) {
+      const parsed = await readFrontmatterFile(filePath);
+      if (!parsed) continue;
+      const { data, content } = parsed;
+      if (data.kind !== "memory_task") continue;
+      let mutated = false;
+      if (data.task_id === undefined && typeof data.memory_task_id === "string") {
+        data.task_id = data.memory_task_id;
+        mutated = true;
+      }
+      if (data.task_status === undefined && typeof data.memory_status === "string") {
+        data.task_status = data.memory_status;
+        mutated = true;
+      }
+      if (Array.isArray(data.tags) && !data.tags.includes("agent-task")) {
+        data.tags = [...data.tags, "agent-task"];
+        mutated = true;
+      }
+      if (mutated) {
+        if (!options.dryRun) {
+          await writeFrontmatterFile(filePath, data, content);
+        }
+        changed.push(relFromRoot(ctx.rootDir, filePath));
+      }
+    }
+    return { changed: [...new Set(changed)] };
+  }
+};
+
 export const ALL_MIGRATIONS: readonly MigrationStep[] = [
   MIGRATION_ADD_DECAY_FIELDS,
   MIGRATION_ADD_TIER_DEFAULT,
   MIGRATION_ADD_TAGS_FIELD,
   MIGRATION_NOTE_WATCH_BLOCK,
   MIGRATION_REBUILD_SEARCH_INDEX,
-  MIGRATION_ADD_MEMORY_LEDGER
+  MIGRATION_ADD_MEMORY_LEDGER,
+  MIGRATION_3_0_RETRIEVAL_AND_TASKS
 ];
 
 function compareSemver(a: string, b: string): number {

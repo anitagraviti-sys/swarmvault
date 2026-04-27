@@ -28,6 +28,7 @@ import {
   createSupersessionEdge,
   deleteContextPack,
   deleteManagedSource,
+  doctorRetrieval,
   downloadWhisperModel,
   explainGraphVault,
   exploreVault,
@@ -38,6 +39,7 @@ import {
   exportObsidianVault,
   finishMemoryTask,
   getGitHookStatus,
+  getRetrievalStatus,
   getWatchStatus,
   graphDiff,
   guideManagedSource,
@@ -69,6 +71,7 @@ import {
   readContextPack,
   readGraphReport,
   readMemoryTask,
+  rebuildRetrievalIndex,
   registerLocalWhisperProvider,
   rejectApproval,
   reloadManagedSources,
@@ -112,9 +115,9 @@ program
 function readCliVersion(): string {
   try {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string };
-    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "2.0.0";
+    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "3.0.0";
   } catch {
-    return "2.0.0";
+    return "3.0.0";
   }
 }
 
@@ -869,7 +872,8 @@ program
   .option("--no-save", "Do not persist the answer to wiki/outputs")
   .option("--commit", "Auto-commit wiki changes after query")
   .option("--gap-fill", "Pull external web-search evidence when the local wiki has gaps (requires webSearch.tasks.queryProvider).")
-  .option("--memory <id>", "Attach this query output to an agent memory task")
+  .option("--task <id>", "Attach this query output to an agent task")
+  .option("--memory <id>", "Compatibility alias for --task")
   .addOption(
     new Option("--format <format>", "Output format").choices(["markdown", "report", "slides", "chart", "image"]).default("markdown")
   )
@@ -880,6 +884,7 @@ program
         save?: boolean;
         commit?: boolean;
         gapFill?: boolean;
+        task?: string;
         memory?: string;
         format?: "markdown" | "report" | "slides" | "chart" | "image";
       }
@@ -889,7 +894,7 @@ program
         save: options.save ?? true,
         format: options.format,
         gapFill: options.gapFill ?? false,
-        memoryTaskId: options.memory
+        memoryTaskId: options.task ?? options.memory
       });
       if (isJson()) {
         emitJson(result);
@@ -915,25 +920,28 @@ context
   .argument("<goal>", "Task, question, or goal the agent needs context for")
   .option("--target <target>", "Optional page, node, path, project, or label to anchor the pack")
   .option("--budget <tokens>", "Approximate token budget for included context", String(8000))
-  .option("--memory <id>", "Attach the context pack to an agent memory task")
+  .option("--task <id>", "Attach the context pack to an agent task")
+  .option("--memory <id>", "Compatibility alias for --task")
   .addOption(new Option("--format <format>", "Output format").choices(["markdown", "json", "llms"]).default("markdown"))
-  .action(async (goal: string, options: { target?: string; budget?: string; memory?: string; format?: ContextPackFormat }) => {
-    const budgetTokens = parsePositiveInt(options.budget, 8000);
-    const result = await buildContextPack(process.cwd(), {
-      goal,
-      target: options.target,
-      budgetTokens,
-      format: options.format,
-      memoryTaskId: options.memory
-    });
-    if (isJson()) {
-      emitJson(result);
-      return;
+  .action(
+    async (goal: string, options: { target?: string; budget?: string; task?: string; memory?: string; format?: ContextPackFormat }) => {
+      const budgetTokens = parsePositiveInt(options.budget, 8000);
+      const result = await buildContextPack(process.cwd(), {
+        goal,
+        target: options.target,
+        budgetTokens,
+        format: options.format,
+        memoryTaskId: options.task ?? options.memory
+      });
+      if (isJson()) {
+        emitJson(result);
+        return;
+      }
+      log(result.rendered);
+      log(`Saved context pack to ${result.markdownPath}`);
+      log(`Saved context artifact to ${result.artifactPath}`);
     }
-    log(result.rendered);
-    log(`Saved context pack to ${result.markdownPath}`);
-    log(`Saved context artifact to ${result.artifactPath}`);
-  });
+  );
 
 context
   .command("list")
@@ -1133,13 +1141,161 @@ memory
     log(result.rendered);
   });
 
+const task = program.command("task").description("Manage git-backed agent task ledger entries.");
+
+task
+  .command("start")
+  .description("Start a durable agent task and build its initial context pack.")
+  .argument("<goal>", "Task goal to preserve")
+  .option("--target <target>", "Optional page, node, path, project, or label to anchor the initial context pack")
+  .option("--budget <tokens>", "Approximate token budget for the initial context pack", String(8000))
+  .option("--agent <name>", "Agent name to record on the task")
+  .option("--context-pack <id>", "Attach an existing context pack instead of building a new one")
+  .action(async (goal: string, options: { target?: string; budget?: string; agent?: string; contextPack?: string }) => {
+    const result = await startMemoryTask(process.cwd(), {
+      goal,
+      target: options.target,
+      budgetTokens: parsePositiveInt(options.budget, 8000),
+      agent: options.agent,
+      contextPackId: options.contextPack
+    });
+    if (isJson()) {
+      emitJson(result);
+      return;
+    }
+    log(result.task.id);
+    log(`Saved task to ${result.markdownPath}`);
+  });
+
+task
+  .command("update")
+  .description("Append a note, decision, path, context pack, or status change to a task.")
+  .argument("<id>", "Task id")
+  .option("--note <text>", "Append a task note")
+  .option("--decision <text>", "Append a decision")
+  .option("--changed-path <path>", "Record a changed file or wiki path")
+  .option("--context-pack <id>", "Attach a context pack")
+  .option("--session <id>", "Attach a session id")
+  .option("--source <id>", "Attach a source id")
+  .option("--page <id>", "Attach a page id")
+  .option("--node <id>", "Attach a graph node id")
+  .option("--git-ref <ref>", "Attach a git ref")
+  .addOption(new Option("--status <status>", "Task status").choices(["active", "blocked", "completed", "archived"]))
+  .action(
+    async (
+      id: string,
+      options: {
+        note?: string;
+        decision?: string;
+        changedPath?: string;
+        contextPack?: string;
+        session?: string;
+        source?: string;
+        page?: string;
+        node?: string;
+        gitRef?: string;
+        status?: AgentMemoryTaskStatus;
+      }
+    ) => {
+      const result = await updateMemoryTask(process.cwd(), id, {
+        note: options.note,
+        decision: options.decision,
+        changedPath: options.changedPath,
+        contextPackId: options.contextPack,
+        sessionId: options.session,
+        sourceId: options.source,
+        pageId: options.page,
+        nodeId: options.node,
+        gitRef: options.gitRef,
+        status: options.status
+      });
+      if (isJson()) {
+        emitJson(result);
+        return;
+      }
+      log(`Updated task ${result.task.id}.`);
+    }
+  );
+
+task
+  .command("finish")
+  .description("Finish a task with an outcome and optional follow-up.")
+  .argument("<id>", "Task id")
+  .requiredOption("--outcome <text>", "Outcome to record")
+  .option("--follow-up <text>", "Follow-up to preserve for the next agent")
+  .action(async (id: string, options: { outcome: string; followUp?: string }) => {
+    const result = await finishMemoryTask(process.cwd(), id, {
+      outcome: options.outcome,
+      followUp: options.followUp
+    });
+    if (isJson()) {
+      emitJson(result);
+      return;
+    }
+    log(`Finished task ${result.task.id}.`);
+  });
+
+task
+  .command("list")
+  .description("List saved agent tasks.")
+  .action(async () => {
+    const tasks = await listMemoryTasks(process.cwd());
+    if (isJson()) {
+      emitJson(tasks);
+      return;
+    }
+    if (!tasks.length) {
+      log("No tasks.");
+      return;
+    }
+    for (const entry of tasks) {
+      log(`${entry.id} — ${entry.status} — ${entry.goal}`);
+    }
+  });
+
+task
+  .command("show")
+  .description("Print a saved agent task.")
+  .argument("<id>", "Task id")
+  .action(async (id: string) => {
+    const entry = await readMemoryTask(process.cwd(), id);
+    if (!entry) {
+      throw new Error(`Task not found: ${id}`);
+    }
+    if (isJson()) {
+      emitJson(entry);
+      return;
+    }
+    log(`Task: ${entry.title}`);
+    log(`Status: ${entry.status}`);
+    log(`Goal: ${entry.goal}`);
+    if (entry.outcome) log(`Outcome: ${entry.outcome}`);
+    if (entry.followUps.length) log(`Follow-ups: ${entry.followUps.join("; ")}`);
+    log(`Markdown: ${entry.markdownPath}`);
+  });
+
+task
+  .command("resume")
+  .description("Render a task handoff for the next agent.")
+  .argument("<id>", "Task id")
+  .addOption(new Option("--format <format>", "Output format").choices(["markdown", "json", "llms"]).default("markdown"))
+  .action(async (id: string, options: { format?: AgentMemoryResumeFormat }) => {
+    const result = await resumeMemoryTask(process.cwd(), id, { format: options.format });
+    if (isJson() || options.format === "json") {
+      emitJson(result);
+      return;
+    }
+    log(result.rendered);
+  });
+
 program
   .command("explore")
   .description("Run a save-first multi-step exploration loop against the vault.")
   .argument("<question>", "Root question to explore")
   .option("--steps <n>", "Maximum number of exploration steps", "3")
   .option("--gap-fill", "Pull external web-search evidence when the local wiki has gaps (requires webSearch.tasks.exploreProvider).")
-  .option("--memory <id>", "Attach this exploration to an agent memory task")
+  .option("--task <id>", "Attach this exploration to an agent task")
+  .option("--memory <id>", "Compatibility alias for --task")
   .addOption(
     new Option("--format <format>", "Output format for step pages")
       .choices(["markdown", "report", "slides", "chart", "image"])
@@ -1148,7 +1304,13 @@ program
   .action(
     async (
       question: string,
-      options: { steps?: string; gapFill?: boolean; memory?: string; format?: "markdown" | "report" | "slides" | "chart" | "image" }
+      options: {
+        steps?: string;
+        gapFill?: boolean;
+        task?: string;
+        memory?: string;
+        format?: "markdown" | "report" | "slides" | "chart" | "image";
+      }
     ) => {
       const stepCount = parsePositiveInt(options.steps, 3);
       const result = await exploreVault(process.cwd(), {
@@ -1156,7 +1318,7 @@ program
         steps: stepCount,
         format: options.format,
         gapFill: options.gapFill ?? false,
-        memoryTaskId: options.memory
+        memoryTaskId: options.task ?? options.memory
       });
       if (isJson()) {
         emitJson(result);
@@ -2385,6 +2547,63 @@ program
       if (diff.removedEdges.length > 20) {
         log(`  ... and ${diff.removedEdges.length - 20} more`);
       }
+    }
+  });
+
+const retrieval = program.command("retrieval").description("Inspect and repair the local retrieval index.");
+
+retrieval
+  .command("status")
+  .description("Show retrieval index health and configuration.")
+  .action(async () => {
+    const status = await getRetrievalStatus(process.cwd());
+    if (isJson()) {
+      emitJson(status);
+      return;
+    }
+    log(`Retrieval backend: ${status.configured.backend}`);
+    log(`Index: ${status.indexExists ? "present" : "missing"} (${status.indexPath})`);
+    log(`Manifest: ${status.manifestExists ? "present" : "missing"} (${status.manifestPath})`);
+    log(`Graph: ${status.graphExists ? "present" : "missing"}`);
+    log(`Pages indexed: ${status.pageCount}`);
+    log(`State: ${status.stale ? "stale" : "fresh"}`);
+    for (const warning of status.warnings) {
+      log(`Warning: ${warning}`);
+    }
+  });
+
+retrieval
+  .command("rebuild")
+  .description("Rebuild the local retrieval index from the current graph.")
+  .action(async () => {
+    const status = await rebuildRetrievalIndex(process.cwd());
+    if (isJson()) {
+      emitJson(status);
+      return;
+    }
+    log(`Rebuilt retrieval index at ${status.indexPath}`);
+    log(`Pages indexed: ${status.pageCount}`);
+  });
+
+retrieval
+  .command("doctor")
+  .description("Diagnose retrieval index problems and optionally repair them.")
+  .option("--repair", "Rebuild stale or missing retrieval artifacts", false)
+  .action(async (options: { repair?: boolean }) => {
+    const result = await doctorRetrieval(process.cwd(), { repair: options.repair });
+    if (isJson()) {
+      emitJson(result);
+      return;
+    }
+    log(`Retrieval health: ${result.ok ? "ok" : "needs attention"}`);
+    if (result.repaired) {
+      log("Repaired retrieval index.");
+    }
+    if (result.actions.length) {
+      log(`Suggested action(s): ${result.actions.join(", ")}`);
+    }
+    for (const warning of result.status.warnings) {
+      log(`Warning: ${warning}`);
     }
   });
 

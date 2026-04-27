@@ -34,10 +34,12 @@ Stable:
 | `swarmvault source add\|list\|reload\|delete\|review\|guide\|session` | Stable | 0.7.x |
 | `swarmvault inbox import [dir]` | Stable | 0.7.x |
 | `swarmvault compile [--approve] [--commit] [--max-tokens <n>]` | Stable | 0.1.0 |
-| `swarmvault query <question> [--no-save] [--commit] [--format ...] [--gap-fill]` | Stable | 0.1.0 (`--gap-fill` since 0.10.0) |
-| `swarmvault context build\|list\|show\|delete` | Stable | 1.5.0 |
-| `swarmvault memory start\|update\|finish\|list\|show\|resume` | Stable | 2.0.0 |
-| `swarmvault explore <question> [--steps <n>] [--format ...] [--gap-fill]` | Stable | 0.7.x (`--gap-fill` since 0.10.0) |
+| `swarmvault query <question> [--no-save] [--commit] [--format ...] [--gap-fill] [--task <id>] [--memory <id>]` | Stable | 0.1.0 (`--gap-fill` since 0.10.0, `--task` since 3.0.0) |
+| `swarmvault context build\|list\|show\|delete` | Stable | 1.5.0 (`--task` since 3.0.0) |
+| `swarmvault task start\|update\|finish\|list\|show\|resume` | Stable | 3.0.0 |
+| `swarmvault memory start\|update\|finish\|list\|show\|resume` | Stable compatibility alias | 2.0.0 |
+| `swarmvault retrieval status\|rebuild\|doctor [--repair]` | Stable | 3.0.0 |
+| `swarmvault explore <question> [--steps <n>] [--format ...] [--gap-fill] [--task <id>] [--memory <id>]` | Stable | 0.7.x (`--gap-fill` since 0.10.0, `--task` since 3.0.0) |
 | `swarmvault lint [--deep\|--no-deep] [--web] [--conflicts] [--decay] [--tiers]` | Stable | 0.1.0 (`--decay`/`--tiers` since 0.10.0) |
 | `swarmvault review list\|show\|accept\|reject` | Stable | 0.7.x |
 | `swarmvault graph query\|path\|explain\|god-nodes\|blast\|share\|serve\|export\|push\|supersession` | Stable | 0.7.x (`supersession` since 0.10.0, `share` since 1.2.0, `graph share --svg` since 1.3.0, `graph share --bundle` since 1.4.0) |
@@ -73,6 +75,7 @@ Stable (all keys existing in 0.11.0 plus the new 0.12.0 additions):
 - `repoAnalysis.{classifyGlobs?, extractClasses?}`
 - `graphSinks.neo4j.{uri, username, passwordEnv, database?, vaultId?, includeClasses?, batchSize?}`
 - `graph.{communityResolution?, similarityIdfFloor?, similarityEdgeCap?, godNodeLimit?, foldCommunitiesBelow?}`
+- `retrieval.{backend?, shardSize?, hybrid?, rerank?, embeddingProvider?, maxIndexedRows?}`
 - `webSearch.{providers, tasks.{deepLintProvider?, queryProvider?, exploreProvider?}}`
 - `candidate.autoPromote.*`
 - `redaction.{enabled?, placeholder?, useDefaults?, patterns?}`
@@ -80,13 +83,17 @@ Stable (all keys existing in 0.11.0 plus the new 0.12.0 additions):
 - `consolidation.{enabled?, workingToEpisodic?, episodicToSemantic?, semanticToProcedural?}`
 - `watch.{repoRoots?, excludeRepoRoots?}`
 
+Deprecated stable aliases:
+
+- `search.{hybrid?, rerank?}` from 0.7.x through 2.x is migrated to `retrieval.{hybrid?, rerank?}` by `swarmvault migrate --target 3.0.0`.
+
 Unknown keys are preserved by `swarmvault migrate` but are not covered by the stability promise; they may be read by experimental code paths that change.
 
 ## MCP tools (`swarmvault mcp`)
 
 Stable tools exposed over stdio:
 
-`ingest`, `compile`, `query`, `explore`, `lint`, `search`, `page`, `source_list`, `candidate_list`, `promote_candidate`, `archive_candidate`, `preview_candidate_scores`, `auto_promote_candidates`, `list_approvals`, `read_approval`, `review_decision`, `blast_radius`, `build_context_pack`, `list_context_packs`, `read_context_pack`, `start_memory_task`, `update_memory_task`, `finish_memory_task`, `list_memory_tasks`, `read_memory_task`, `resume_memory_task`, `list_godnodes`, `list_hyperedges`, `explain_graph`, `path_graph`, `query_graph`, `watch_status`, `consolidate`, `migrate`.
+`ingest`, `compile`, `query`, `explore`, `lint`, `search`, `page`, `source_list`, `candidate_list`, `promote_candidate`, `archive_candidate`, `preview_candidate_scores`, `auto_promote_candidates`, `list_approvals`, `read_approval`, `review_decision`, `blast_radius`, `build_context_pack`, `list_context_packs`, `read_context_pack`, `start_task`, `update_task`, `finish_task`, `list_tasks`, `read_task`, `resume_task`, `start_memory_task`, `update_memory_task`, `finish_memory_task`, `list_memory_tasks`, `read_memory_task`, `resume_memory_task`, `retrieval_status`, `rebuild_retrieval`, `doctor_retrieval`, `list_godnodes`, `list_hyperedges`, `explain_graph`, `path_graph`, `query_graph`, `watch_status`, `consolidate`, `migrate`.
 
 ## Page frontmatter fields
 
@@ -112,7 +119,7 @@ Stable and **preserved** by `swarmvault migrate`:
 - `decay_score`, `last_confirmed_at`, `superseded_by` (since 0.10.0)
 - `tier`, `consolidated_from_page_ids[]`, `consolidation_confidence` (since 0.10.0)
 - `context_pack_id`, `goal`, `target`, `budget_tokens`, `estimated_tokens`, `artifact_path` on generated context-pack output pages (since 1.5.0)
-- `memory_task_id`, `memory_status`, `context_pack_ids[]`, `related_page_ids[]`, `related_node_ids[]`, `related_source_ids[]`, `git_refs[]`, `changed_paths[]` on generated memory task pages (since 2.0.0)
+- `task_id`, `task_status`, `memory_task_id`, `memory_status`, `context_pack_ids[]`, `related_page_ids[]`, `related_node_ids[]`, `related_source_ids[]`, `git_refs[]`, `changed_paths[]` on generated task pages (memory field names since 2.0.0, task aliases since 3.0.0)
 
 Additions to this list are `MINOR` changes. Removals require a `MAJOR` bump and a matching `swarmvault migrate` step.
 
@@ -131,16 +138,16 @@ Stable field set on `GraphArtifact`:
 
 Viewer-only synthetic hub nodes (since 0.11.0) never appear in `state/graph.json`.
 
-Stable graph node types include `memory_task` and `decision` (since 2.0.0). Stable memory relations include `uses_context`, `records_decision`, `touched`, `produced_output`, and `follows_up`.
+Stable graph node types include `memory_task` and `decision` (since 2.0.0). Stable task/memory relations include `uses_context`, `records_decision`, `touched`, `produced_output`, and `follows_up`.
 
 ## State files
 
 Stable file set in `state/`:
 
 - `graph.json` — compiled graph artifact (above)
-- `search.sqlite` — hybrid search index (regenerated by compile; may be deleted without data loss)
+- `retrieval/` — retrieval index directory, including the local SQLite FTS shard and `manifest.json` health metadata (regenerated by compile or `swarmvault retrieval rebuild`; may be deleted without data loss)
 - `context-packs/` — saved agent context-pack JSON artifacts (since 1.5.0)
-- `memory/tasks/` — saved agent memory task JSON artifacts (since 2.0.0)
+- `memory/tasks/` — saved agent task JSON artifacts, retained under the existing path for compatibility (since 2.0.0)
 - `approvals/` — review bundles
 - `candidates/` — staged candidate pages
 - `ingest-runs/<id>.json` — per-run failure logs for `ingest --resume`

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0
+
+- Added the 3.0 retrieval surface: `swarmvault retrieval status|rebuild|doctor`, engine retrieval status/rebuild/doctor APIs, MCP `retrieval_status`, `rebuild_retrieval`, and `doctor_retrieval` tools, plus a `state/retrieval/manifest.json` health record beside the local SQLite FTS shard.
+- Moved release-facing search configuration to `retrieval.{backend,shardSize,hybrid,rerank,embeddingProvider,maxIndexedRows}` and added an idempotent `swarmvault migrate --target 3.0.0` step that rewrites legacy `search.{hybrid,rerank}` config into the new retrieval block.
+- Added the task-first agent ledger surface: `swarmvault task start|update|finish|list|show|resume`, `--task <id>` on query/context/explore, task MCP tools, the `swarmvault://tasks` resource, and `task_id` / `task_status` frontmatter on generated task pages.
+- Kept the 2.0 memory CLI, MCP tools, resources, state files, and frontmatter as compatibility aliases for existing workflows while updating generated pages and graph tags to advertise the task-first terminology.
+- Bumped OSS packages, the viewer package, Obsidian plugin metadata, MCP-facing version, and the published ClawHub skill bundle to `3.0.0`, refreshed package locks, and extended tests around retrieval repair, 3.0 migration, task aliases, and MCP exposure.
+
 ## 2.0.0
 
 - Added the Agent Memory Ledger — `swarmvault memory start|update|finish|list|show|resume` records durable task goals, decisions, graph evidence, changed paths, outcomes, and follow-ups under `state/memory/tasks/` with markdown companions in `wiki/memory/tasks/`

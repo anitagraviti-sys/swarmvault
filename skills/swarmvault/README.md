@@ -65,7 +65,7 @@ swarmvault graph share --svg ./share-card.svg
 swarmvault graph share --bundle ./share-kit
 swarmvault query "What is the auth flow?"
 swarmvault context build "Implement the auth refactor" --target ./src --budget 8000
-swarmvault memory start "Implement the auth refactor" --target ./src --agent codex
+swarmvault task start "Implement the auth refactor" --target ./src --agent codex
 swarmvault graph blast ./src/index.ts
 swarmvault graph serve
 swarmvault graph export --report ./exports/report.html
@@ -81,7 +81,7 @@ For very large graphs, `swarmvault graph serve` and `swarmvault graph export --h
 
 `swarmvault context build "<goal>" --target <path-or-node> --budget <tokens>` creates an agent-ready evidence pack from the compiled vault. It saves JSON under `state/context-packs/`, writes a markdown companion under `wiki/context/`, reports omitted items when the token budget is too small, and can print `markdown`, `json`, or `llms` output for kickoff prompts and handoffs.
 
-`swarmvault memory start "<goal>" --target <path-or-node>` creates a durable task ledger and automatically links an initial context pack. Use `swarmvault memory update <id> --note|--decision|--changed-path|--context-pack`, `swarmvault memory finish <id> --outcome <text>`, and `swarmvault memory resume <id> --format markdown|json|llms` to preserve decisions, evidence, touched files, outcomes, and follow-ups for the next agent.
+`swarmvault task start "<goal>" --target <path-or-node>` creates a durable task ledger and automatically links an initial context pack. Use `swarmvault task update <id> --note|--decision|--changed-path|--context-pack`, `swarmvault task finish <id> --outcome <text>`, and `swarmvault task resume <id> --format markdown|json|llms` to preserve decisions, evidence, touched files, outcomes, and follow-ups for the next agent. The older `memory` commands remain compatibility aliases.
 
 The default `heuristic` provider is a valid local/offline starting point. Add a model provider in `swarmvault.config.json` when you want richer synthesis quality or optional capabilities such as embeddings, vision, or image generation. The recommended fully-local setup is `ollama pull gemma4` wired up as the `compileProvider` and `queryProvider` (see the root README for the exact config block). Any supported provider works - OpenAI, Anthropic, Gemini, OpenRouter, Groq, Together, xAI, Cerebras, openai-compatible, or custom. Code files are always parsed locally via tree-sitter; only non-code text or image sources go to configured model providers.
 
@@ -89,7 +89,7 @@ The default `heuristic` provider is a valid local/offline starting point. Add a 
 
 For local semantic graph query without API keys, point `tasks.embeddingProvider` at an embedding-capable local backend such as Ollama, not `heuristic`.
 
-With an embedding-capable provider available, SwarmVault can also merge semantic page matches into local search by default. `tasks.embeddingProvider` is the explicit way to choose that backend, but SwarmVault can also fall back to a `queryProvider` with embeddings support. Set `search.rerank: true` when you want the configured `queryProvider` to rerank the merged top hits before answering.
+With an embedding-capable provider available, SwarmVault can also merge semantic page matches into local search by default. `tasks.embeddingProvider` is the explicit way to choose that backend, but SwarmVault can also fall back to a `queryProvider` with embeddings support. Set `retrieval.rerank: true` when you want the configured `queryProvider` to rerank the merged top hits before answering.
 
 Audio file ingest uses `tasks.audioProvider` when you configure a provider with `audio` capability. The fully-local option is `swarmvault provider setup --local-whisper --apply`, which installs a `local-whisper` provider, downloads a whisper.cpp ggml model into `~/.swarmvault/models/`, and assigns `tasks.audioProvider` so voice memos, meetings, and interviews transcribe with no API keys and no network calls. YouTube transcript ingest works without a model provider. If you want to pin graph clustering instead of using the adaptive default, set `graph.communityResolution` in `swarmvault.config.json`.
 
@@ -146,12 +146,12 @@ The published ClawHub package is intentionally text-only in this release.
 - `wiki/dashboards/` for recent sources, reading log, timeline, source sessions, source guides, research map, contradictions, and open questions
 - `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, and `wiki/graph/share-kit/` for post-ready text, visual graph summaries, HTML preview, and JSON metadata generated on compile
 - `wiki/context/` for markdown context-pack companions
-- `wiki/memory/` for task ledger index and markdown memory task pages
+- `wiki/memory/` for task ledger index and markdown task pages
 - `wiki/candidates/` for staged concept/entity pages
 - `state/graph.json` for the compiled graph
 - `state/context-packs/` for saved JSON context packs with citations, token-budget accounting, included items, and omitted items
 - `state/memory/tasks/` for saved JSON task ledger records
-- `state/search.sqlite` for local search
+- `state/retrieval/` for the local retrieval index and manifest
 - `state/sources.json` plus `state/sources/<id>/` for managed-source registry state and working sync data
 - `state/approvals/` for compile approval bundles
 - `state/sessions/` and `state/jobs.ndjson` for saved run history
@@ -183,7 +183,7 @@ Expose the vault over MCP with:
 swarmvault mcp
 ```
 
-The MCP surface includes context-pack build/read/list and memory task start/update/finish/list/read/resume tools so host agents can request bounded evidence and keep a durable task ledger without shelling out to the CLI.
+The MCP surface includes context-pack build/read/list, task start/update/finish/list/read/resume, compatibility memory task, and retrieval status/rebuild/doctor tools so host agents can request bounded evidence, keep a durable task ledger, and inspect retrieval health without shelling out to the CLI.
 
 ## Links
 

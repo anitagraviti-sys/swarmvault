@@ -360,6 +360,14 @@ export interface VaultConfig {
      */
     foldCommunitiesBelow?: number;
   };
+  retrieval?: {
+    backend?: "sqlite";
+    shardSize?: number;
+    hybrid?: boolean;
+    rerank?: boolean;
+    embeddingProvider?: string;
+    maxIndexedRows?: number;
+  };
   webSearch?: {
     providers: Record<string, WebSearchProviderConfig>;
     tasks: {
@@ -369,7 +377,9 @@ export interface VaultConfig {
     };
   };
   search?: {
+    /** @deprecated Use retrieval.hybrid instead. */
     hybrid?: boolean;
+    /** @deprecated Use retrieval.rerank instead. */
     rerank?: boolean;
   };
   autoCommit?: boolean;
@@ -515,6 +525,8 @@ export interface ResolvedPaths {
   candidateConceptsDir: string;
   candidateEntitiesDir: string;
   stateDir: string;
+  retrievalDir: string;
+  retrievalManifestPath: string;
   schedulesDir: string;
   agentDir: string;
   inboxDir: string;
@@ -1372,6 +1384,49 @@ export interface SearchResult {
   projectIds: string[];
   sourceType?: SourceCaptureType;
   sourceClass?: SourceClass;
+}
+
+export interface RetrievalConfig {
+  backend: "sqlite";
+  shardSize: number;
+  hybrid: boolean;
+  rerank: boolean;
+  embeddingProvider?: string;
+  maxIndexedRows?: number;
+}
+
+export interface RetrievalManifest {
+  version: 1;
+  backend: "sqlite";
+  generatedAt: string;
+  graphGeneratedAt?: string;
+  graphHash?: string;
+  shardCount: number;
+  shards: Array<{
+    id: string;
+    path: string;
+    pageCount: number;
+  }>;
+}
+
+export interface RetrievalStatus {
+  configured: RetrievalConfig;
+  manifestPath: string;
+  indexPath: string;
+  manifestExists: boolean;
+  indexExists: boolean;
+  graphExists: boolean;
+  stale: boolean;
+  pageCount: number;
+  shardCount: number;
+  warnings: string[];
+}
+
+export interface RetrievalDoctorResult {
+  status: RetrievalStatus;
+  ok: boolean;
+  repaired: boolean;
+  actions: string[];
 }
 
 export interface QueryOptions {

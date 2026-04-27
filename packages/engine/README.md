@@ -2,7 +2,7 @@
 
 `@swarmvaultai/engine` is the runtime library behind SwarmVault.
 
-It exposes the primitives for initializing a workspace, ingesting sources, importing an inbox, compiling a wiki, querying the vault, recording memory tasks, running lint, serving the graph viewer, watching the inbox, and exposing the vault over MCP.
+It exposes the primitives for initializing a workspace, ingesting sources, importing an inbox, compiling a wiki, querying the vault, recording agent tasks, maintaining retrieval, running lint, serving the graph viewer, watching the inbox, and exposing the vault over MCP.
 
 ## Who This Is For
 
@@ -30,11 +30,13 @@ import {
   deleteManagedSource,
   defaultVaultConfig,
   defaultVaultSchema,
+  doctorRetrieval,
   exploreVault,
   exportGraphFormat,
   exportGraphHtml,
   explainGraphVault,
   finishMemoryTask,
+  getRetrievalStatus,
   getWatchStatus,
   getGitHookStatus,
   importInbox,
@@ -58,6 +60,7 @@ import {
   queryVault,
   readContextPack,
   readMemoryTask,
+  rebuildRetrievalIndex,
   reloadManagedSources,
   resumeMemoryTask,
   runWatchCycle,
@@ -74,7 +77,7 @@ import {
 } from "@swarmvaultai/engine";
 ```
 
-The engine also exports the main runtime types for providers, graph artifacts, pages, manifests, query results, memory tasks, lint findings, and watch records.
+The engine also exports the main runtime types for providers, graph artifacts, pages, manifests, query results, task records, retrieval status, lint findings, and watch records.
 
 ## Example
 
@@ -85,10 +88,12 @@ import {
   benchmarkVault,
   buildContextPack,
   compileVault,
+  doctorRetrieval,
   exploreVault,
   exportGraphHtml,
   exportGraphFormat,
   finishMemoryTask,
+  getRetrievalStatus,
   getWatchStatus,
   importInbox,
   initVault,
@@ -100,6 +105,7 @@ import {
   queryGraphVault,
   queryVault,
   readContextPack,
+  rebuildRetrievalIndex,
   resumeMemoryTask,
   reloadManagedSources,
   runWatchCycle,
@@ -123,6 +129,7 @@ console.log(benchmark.avgQueryTokens);
 
 const saved = await queryVault(rootDir, { question: "What changed most recently?" });
 console.log(saved.savedPath);
+console.log(await getRetrievalStatus(rootDir));
 
 const contextPack = await buildContextPack(rootDir, {
   goal: "Implement the auth refactor",
@@ -141,11 +148,12 @@ await updateMemoryTask(rootDir, memory.task.id, {
   changedPath: "packages/engine/src/memory.ts"
 });
 await finishMemoryTask(rootDir, memory.task.id, {
-  outcome: "Memory ledger shipped behind CLI, MCP, graph, and viewer surfaces."
+  outcome: "Task ledger shipped behind CLI, MCP, graph, and viewer surfaces."
 });
 console.log((await readMemoryTask(rootDir, memory.task.id)).status);
 console.log((await listMemoryTasks(rootDir)).length);
 console.log((await resumeMemoryTask(rootDir, memory.task.id)).content);
+console.log(await doctorRetrieval(rootDir));
 
 const graphQuery = await queryGraphVault(rootDir, "Which nodes bridge the biggest communities?");
 console.log(graphQuery.summary);
@@ -294,7 +302,7 @@ This matters because many "OpenAI-compatible" backends only implement part of th
 - `exportGraphFormat(rootDir, "svg" | "graphml" | "cypher", outputPath)` exports the graph into interoperable file formats
 - `pushGraphNeo4j(rootDir, options)` upserts the current graph into Neo4j over Bolt/Aura with shared-database-safe `vaultId` namespacing
 
-The MCP surface includes tools for workspace info, page search, page reads, source listing, querying, context-pack build/read/list, memory task start/update/finish/list/read/resume, ingestion, compile, lint, graph report reads, hyperedge reads, and graph-native read operations such as graph query, node explain, neighbor lookup, shortest path, and god-node listing, along with resources for config, graph, manifests, schema, page content, context-pack listings, memory task listings, and session artifacts.
+The MCP surface includes tools for workspace info, page search, page reads, source listing, querying, context-pack build/read/list, task start/update/finish/list/read/resume, compatibility memory task tools, retrieval status/rebuild/doctor, ingestion, compile, lint, graph report reads, hyperedge reads, and graph-native read operations such as graph query, node explain, neighbor lookup, shortest path, and god-node listing, along with resources for config, graph, manifests, schema, page content, context-pack listings, task listings, compatibility memory task listings, and session artifacts.
 
 ## Artifacts
 
@@ -307,7 +315,7 @@ Running the engine produces a local workspace with these main areas:
 - `wiki/`: generated markdown pages, the append-only `log.md` activity trail, staged candidates, saved query outputs, exploration hub pages, and a human-only `insights/` area
 - `wiki/graph/`: generated graph report pages, markdown/SVG share cards, the portable `share-kit/`, and per-community summaries derived from `state/graph.json`
 - `wiki/context/`: markdown companions for saved context packs
-- `wiki/memory/`: markdown index and task pages for the agent memory ledger
+- `wiki/memory/`: markdown index and task pages for the agent task ledger
 - `wiki/graph/report.json`: machine-readable graph report data used by the viewer and export surfaces
 - `wiki/outputs/assets/`: local chart/image artifacts and JSON manifests for saved visual outputs
 - `wiki/code/`: generated module pages for ingested code sources
@@ -322,8 +330,8 @@ Running the engine produces a local workspace with these main areas:
 - `state/benchmark.json`: latest benchmark/trust summary for the current vault
 - `state/graph.json`: compiled graph, including semantic-similarity edges and hyperedge-style group patterns
 - `state/context-packs/`: JSON context-pack artifacts for agent kickoff, review, and handoff workflows
-- `state/memory/tasks/`: JSON task records for the agent memory ledger
-- `state/search.sqlite`: full-text index
+- `state/memory/tasks/`: JSON task records for the agent task ledger
+- `state/retrieval/`: local retrieval index directory, including the SQLite FTS shard and manifest
 - `state/sessions/`: canonical session artifacts
 - `state/approvals/`: staged review bundles from `compileVault({ approve: true })`
 - `state/schedules/`: persisted schedule state and leases

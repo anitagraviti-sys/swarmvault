@@ -181,7 +181,7 @@ function frontmatterForTask(task: AgentMemoryTask): Record<string, unknown> {
     page_id: `memory:${task.id}`,
     kind: "memory_task",
     title: task.title,
-    tags: ["agent-memory", "memory-task", `status/${task.status}`],
+    tags: ["agent-task", "agent-memory", "memory-task", `status/${task.status}`],
     source_ids: task.sourceIds,
     project_ids: [],
     node_ids: [`memory:${task.id}`, ...task.decisions.map((decision) => `decision:${task.id}:${decision.id}`), ...task.nodeIds],
@@ -198,6 +198,8 @@ function frontmatterForTask(task: AgentMemoryTask): Record<string, unknown> {
     source_semantic_hashes: {},
     memory_task_id: task.id,
     memory_status: task.status,
+    task_id: task.id,
+    task_status: task.status,
     goal: task.goal,
     target: task.target,
     agent: task.agent,
@@ -276,11 +278,11 @@ function renderMemoryTaskIndex(tasks: AgentMemoryTaskSummary[], generatedAt: str
       : "- none",
     ""
   ];
-  return matter.stringify(["# Agent Memory", "", ...section("Open Tasks", active), ...section("Completed Tasks", completed)].join("\n"), {
+  return matter.stringify(["# Agent Tasks", "", ...section("Open Tasks", active), ...section("Completed Tasks", completed)].join("\n"), {
     page_id: "memory:index",
     kind: "index",
-    title: "Agent Memory",
-    tags: ["index", "agent-memory"],
+    title: "Agent Tasks",
+    tags: ["index", "agent-task", "agent-memory"],
     source_ids: [],
     project_ids: [],
     node_ids: tasks.map((task) => `memory:${task.id}`),
@@ -352,7 +354,7 @@ async function hydrateTaskFromContextPack(rootDir: string, task: AgentMemoryTask
 export async function startMemoryTask(rootDir: string, options: StartMemoryTaskOptions): Promise<AgentMemoryTaskResult> {
   const goal = normalizeWhitespace(options.goal);
   if (!goal) {
-    throw new Error("Memory task goal is required.");
+    throw new Error("Task goal is required.");
   }
   const createdAt = new Date().toISOString();
   const paths = await uniqueMemoryTaskPaths(rootDir, createdAt, goal);
@@ -435,7 +437,7 @@ export async function listMemoryTasks(rootDir: string): Promise<AgentMemoryTaskS
 export async function updateMemoryTask(rootDir: string, target: string, options: UpdateMemoryTaskOptions): Promise<AgentMemoryTaskResult> {
   const task = await readMemoryTask(rootDir, target);
   if (!task) {
-    throw new Error(`Memory task not found: ${target}`);
+    throw new Error(`Task not found: ${target}`);
   }
   const updatedAt = new Date().toISOString();
   const nextStatus = options.status ? memoryTaskStatusSchema.parse(options.status) : task.status;
@@ -468,11 +470,11 @@ export async function updateMemoryTask(rootDir: string, target: string, options:
 export async function finishMemoryTask(rootDir: string, target: string, options: FinishMemoryTaskOptions): Promise<AgentMemoryTaskResult> {
   const outcome = normalizeWhitespace(options.outcome);
   if (!outcome) {
-    throw new Error("Memory task outcome is required.");
+    throw new Error("Task outcome is required.");
   }
   const task = await readMemoryTask(rootDir, target);
   if (!task) {
-    throw new Error(`Memory task not found: ${target}`);
+    throw new Error(`Task not found: ${target}`);
   }
   const updatedAt = new Date().toISOString();
   return await persistMemoryTask(rootDir, {
@@ -486,7 +488,7 @@ export async function finishMemoryTask(rootDir: string, target: string, options:
 
 function renderMemoryResumeMarkdown(task: AgentMemoryTask, contextSections: string[]): string {
   return [
-    `# Agent Memory Resume: ${task.title}`,
+    `# Agent Task Resume: ${task.title}`,
     "",
     `Goal: ${task.goal}`,
     `Status: ${task.status}`,
@@ -525,7 +527,7 @@ export async function resumeMemoryTask(
 ): Promise<ResumeMemoryTaskResult> {
   const task = await readMemoryTask(rootDir, target);
   if (!task) {
-    throw new Error(`Memory task not found: ${target}`);
+    throw new Error(`Task not found: ${target}`);
   }
   const format: AgentMemoryResumeFormat = options.format ?? "markdown";
   if (format === "json") {
@@ -621,7 +623,7 @@ export function buildMemoryGraphElements(
       confidence: 1,
       sourceIds: task.sourceIds,
       projectIds: [],
-      tags: ["agent-memory", `status/${task.status}`]
+      tags: ["agent-task", "agent-memory", `status/${task.status}`]
     });
 
     for (const [index, decision] of task.decisions.entries()) {
@@ -635,7 +637,7 @@ export function buildMemoryGraphElements(
         confidence: 1,
         sourceIds: task.sourceIds,
         projectIds: [],
-        tags: ["agent-memory", "decision"]
+        tags: ["agent-task", "agent-memory", "decision"]
       });
       pushEdge({
         id: `${taskNodeId}->${decisionNodeId}:records_decision:${index + 1}`,
@@ -710,7 +712,7 @@ export function buildMemoryGraphElements(
         confidence: 0.82,
         sourceIds: task.sourceIds,
         projectIds: [],
-        tags: ["agent-memory", "follow-up"]
+        tags: ["agent-task", "agent-memory", "follow-up"]
       });
       pushEdge({
         id: `${taskNodeId}->${followUpNodeId}:follows_up:${index + 1}`,

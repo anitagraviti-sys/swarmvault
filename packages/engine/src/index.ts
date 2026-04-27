@@ -98,6 +98,13 @@ export {
 } from "./providers/openai-compatible-capabilities.js";
 export { assertProviderCapability, createProvider, getProviderForTask } from "./providers/registry.js";
 export { buildConfiguredRedactor, buildRedactor, DEFAULT_REDACTION_PATTERNS, resolveRedactionPatterns } from "./redaction.js";
+export {
+  doctorRetrieval,
+  getRetrievalStatus,
+  rebuildRetrievalIndex,
+  resolveRetrievalConfig,
+  writeRetrievalManifest
+} from "./retrieval.js";
 export { listSchedules, runSchedule, serveSchedules } from "./schedule.js";
 export { loadVaultSchema, loadVaultSchemas } from "./schema.js";
 export {

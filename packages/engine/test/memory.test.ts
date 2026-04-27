@@ -80,10 +80,12 @@ describe("agent memory tasks", () => {
     expect(parsed.data.kind).toBe("memory_task");
     expect(parsed.data.status).toBe("completed");
     expect(parsed.data.memory_task_id).toBe(started.task.id);
+    expect(parsed.data.task_id).toBe(started.task.id);
+    expect(parsed.data.task_status).toBe("completed");
     expect(parsed.data.context_pack_ids).toEqual(started.task.contextPackIds);
 
     const resume = await resumeMemoryTask(rootDir, started.task.id, { format: "llms" });
-    expect(resume.rendered).toContain("Agent Memory Resume");
+    expect(resume.rendered).toContain("Agent Task Resume");
     expect(resume.rendered).toContain("Memory task lifecycle is implemented.");
     expect(resume.task.id).toBe(started.task.id);
 

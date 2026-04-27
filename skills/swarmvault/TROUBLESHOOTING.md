@@ -71,7 +71,7 @@ Then verify:
 - `wiki/graph/share-card.svg`
 - `wiki/graph/share-kit/`
 - `state/graph.json`
-- `state/search.sqlite`
+- `state/retrieval/`
 
 If the vault lives inside git and you want a quick graph-level delta, run `swarmvault diff`.
 
@@ -90,14 +90,14 @@ Then verify:
 
 If many items are listed as omitted, increase `--budget` or narrow `--target`.
 
-## Memory task is missing or does not show in the graph
+## Task is missing or does not show in the graph
 
-Memory tasks are durable local artifacts. Start or inspect them with:
+Tasks are durable local artifacts. Start or inspect them with:
 
 ```bash
-swarmvault memory list
-swarmvault memory start "Prepare the next agent" --target ./src
-swarmvault memory resume <memory-task-id>
+swarmvault task list
+swarmvault task start "Prepare the next agent" --target ./src
+swarmvault task resume <task-id>
 ```
 
 Then verify:
@@ -106,7 +106,7 @@ Then verify:
 - `wiki/memory/tasks/`
 - `state/memory/tasks/`
 
-Run `swarmvault compile` after creating or updating memory tasks when you want `memory_task` and `decision` nodes to appear in `state/graph.json` and the graph viewer.
+Run `swarmvault compile` after creating or updating tasks when you want task and decision nodes to appear in `state/graph.json` and the graph viewer. Existing `memory` commands remain compatibility aliases.
 
 ## Agent install or hooks seem stale
 

@@ -72,6 +72,7 @@ import {
 import { loadSavedOutputPages, relatedOutputsForPage, resolveUniqueOutputSlug } from "./outputs.js";
 import { loadExistingManagedPageState, loadInsightPages, parseStoredPage } from "./pages.js";
 import { getProviderForTask } from "./providers/registry.js";
+import { resolveRetrievalConfig, writeRetrievalManifest } from "./retrieval.js";
 import {
   buildSchemaPrompt,
   composeVaultSchema,
@@ -3360,6 +3361,7 @@ async function syncVaultArtifacts(
     candidateHistory
   } satisfies CompileState);
   await rebuildSearchIndex(paths.searchDbPath, allPages, paths.wikiDir);
+  await writeRetrievalManifest(rootDir, graph);
 
   return {
     graph,
@@ -3590,6 +3592,12 @@ async function refreshIndexesAndSearch(rootDir: string, pages: GraphPage[]): Pro
   );
 
   await rebuildSearchIndex(paths.searchDbPath, pagesWithGraph, paths.wikiDir);
+  if (currentGraph) {
+    await writeRetrievalManifest(rootDir, {
+      ...currentGraph,
+      pages: pagesWithGraph
+    });
+  }
 }
 
 async function prepareOutputPageSave(
@@ -3814,7 +3822,7 @@ async function executeQuery(
       .filter((page) => page.kind === "source" && page.sourceIds.length)
       .map((page) => [page.sourceIds[0], page.projectIds[0] ?? null])
   );
-  const searchResults = searchPages(paths.searchDbPath, question, 5);
+  const searchResults = await searchVault(rootDir, question, 5);
   const excerpts = await Promise.all(
     searchResults.map(async (result) => {
       const absolutePath = path.join(paths.wikiDir, result.path);
@@ -5892,7 +5900,8 @@ export async function searchVault(rootDir: string, query: string, limit = 5): Pr
     await compileVault(rootDir, {});
   }
 
-  const hybrid = config.search?.hybrid !== false;
+  const retrieval = resolveRetrievalConfig(config);
+  const hybrid = retrieval.hybrid;
   const ftsResults = searchPages(paths.searchDbPath, query, hybrid ? limit * 3 : limit);
 
   if (!hybrid || !(await fileExists(paths.graphPath))) {
@@ -5911,7 +5920,7 @@ export async function searchVault(rootDir: string, query: string, limit = 5): Pr
 
   const merged = mergeSearchResults(ftsResults, semanticHits, limit);
 
-  if (config.search?.rerank && merged.length > 1) {
+  if (retrieval.rerank && merged.length > 1) {
     return rerankSearchResults(rootDir, query, merged, limit);
   }
 
@@ -5970,8 +5979,7 @@ async function runResolvedGraphQuery(
     budget?: number;
   } = {}
 ): Promise<GraphQueryResult> {
-  const { paths } = await loadVaultConfig(rootDir);
-  const searchResults = searchPages(paths.searchDbPath, question, { limit: Math.max(5, options.budget ?? 10) });
+  const searchResults = await searchVault(rootDir, question, Math.max(5, options.budget ?? 10));
   const semanticMatches = await semanticGraphMatches(rootDir, graph, question, Math.max(8, options.budget ?? 12)).catch(() => []);
   return queryGraph(graph, question, searchResults, {
     ...options,

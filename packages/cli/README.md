@@ -45,7 +45,8 @@ swarmvault graph share --bundle ./share-kit
 swarmvault benchmark
 swarmvault query "What keeps recurring?" --commit
 swarmvault context build "Ship this feature safely" --target ./src --budget 8000
-swarmvault memory start "Ship this feature safely" --target ./src --agent codex
+swarmvault task start "Ship this feature safely" --target ./src --agent codex
+swarmvault retrieval status
 swarmvault query "Turn this into slides" --format slides
 swarmvault explore "What should I research next?" --steps 3
 swarmvault lint --deep
@@ -213,7 +214,7 @@ Compile the current manifests into:
 
 - generated markdown in `wiki/`
 - structured graph data in `state/graph.json`
-- local search data in `state/search.sqlite`
+- local retrieval data in `state/retrieval/`
 - share cards at `wiki/graph/share-card.md` and `wiki/graph/share-card.svg`, plus a portable share kit at `wiki/graph/share-kit/`
 
 The compiler also reads `swarmvault.schema.md` and records a `schema_hash` plus lifecycle metadata such as `status`, `created_at`, `updated_at`, `compiled_from`, and `managed_by` in generated pages so schema edits can mark pages stale without losing lifecycle state.
@@ -272,13 +273,13 @@ By default, the answer is written into `wiki/outputs/` and immediately registere
 - `wiki/index.md`
 - `wiki/outputs/index.md`
 - `state/graph.json`
-- `state/search.sqlite`
+- `state/retrieval/`
 
 Saved outputs also carry related page, node, and source metadata so SwarmVault can refresh related source, concept, and entity pages immediately.
 
 Human-authored pages in `wiki/insights/` are also indexed into search and query context, but SwarmVault does not rewrite them after initialization.
 
-By default, query uses the local SQLite search index. When an embedding-capable provider is available and `search.hybrid` is not disabled, semantic page matches are fused into the same candidate set before answer generation. `tasks.embeddingProvider` is the explicit way to choose that backend, but SwarmVault can also fall back to a `queryProvider` with embeddings support. Set `search.rerank: true` when you want the configured `queryProvider` to rerank the merged top hits. `--commit` immediately commits saved `wiki/` and `state/` changes when the vault root is inside a git repo.
+By default, query uses the local SQLite retrieval index. When an embedding-capable provider is available and `retrieval.hybrid` is not disabled, semantic page matches are fused into the same candidate set before answer generation. `tasks.embeddingProvider` is the explicit way to choose that backend, but SwarmVault can also fall back to a `queryProvider` with embeddings support. Set `retrieval.rerank: true` when you want the configured `queryProvider` to rerank the merged top hits. `--commit` immediately commits saved `wiki/` and `state/` changes when the vault root is inside a git repo.
 
 ### `swarmvault context build|list|show|delete`
 
@@ -286,7 +287,8 @@ Build and manage agent-ready context packs from the compiled vault.
 
 - `context build "<goal>"` assembles relevant pages, graph nodes, edges, hyperedges, citations, and explicit omitted entries into a bounded bundle
 - `--target <path-or-node>` anchors the pack around a file, page id, node id, or graph label
-- `--memory <id>` links the newly built context pack to an active memory task
+- `--task <id>` links the newly built context pack to an active task
+- `--memory <id>` remains a compatibility alias for `--task`
 - `--budget <tokens>` caps the estimated token budget; over-budget candidates are listed in `omittedItems`
 - `--format markdown|json|llms` controls the printed output shape, while every pack is still saved as JSON
 - saved artifacts live under `state/context-packs/`, with companion markdown pages under `wiki/context/`
@@ -294,16 +296,24 @@ Build and manage agent-ready context packs from the compiled vault.
 
 Use this before handing work to an agent, starting a PR review, or preserving the evidence bundle behind a design/debugging decision.
 
-### `swarmvault memory start|update|finish|list|show|resume`
+### `swarmvault task start|update|finish|list|show|resume`
 
 Record a durable local task ledger for agent work.
 
-- `memory start "<goal>" --target <path-or-node>` creates `state/memory/tasks/<id>.json`, `wiki/memory/tasks/<id>.md`, updates `wiki/memory/index.md`, and builds an initial context pack
-- `memory update <id>` records notes, decisions, changed paths, context packs, sessions, sources, pages, nodes, git refs, or status changes
-- `memory finish <id> --outcome <text>` marks the task completed and can add one or more `--follow-up` entries
-- `memory list`, `memory show <id>`, and `memory resume <id> --format markdown|json|llms` expose the task history for the next agent
+- `task start "<goal>" --target <path-or-node>` creates `state/memory/tasks/<id>.json`, `wiki/memory/tasks/<id>.md`, updates `wiki/memory/index.md`, and builds an initial context pack
+- `task update <id>` records notes, decisions, changed paths, context packs, sessions, sources, pages, nodes, git refs, or status changes
+- `task finish <id> --outcome <text>` marks the task completed and can add one or more `--follow-up` entries
+- `task list`, `task show <id>`, and `task resume <id> --format markdown|json|llms` expose the task history for the next agent
 
-`query`, `explore`, and `context build` also accept `--memory <id>` so saved outputs and context packs can attach to an active task.
+`query`, `explore`, and `context build` accept `--task <id>` so saved outputs and context packs can attach to an active task. The 2.0 `memory` command group and `--memory <id>` flag remain compatibility aliases.
+
+### `swarmvault retrieval status|rebuild|doctor`
+
+Inspect and maintain the local retrieval index under `state/retrieval/`.
+
+- `retrieval status` reports backend, configured hybrid/rerank behavior, manifest freshness, page count, and the current SQLite shard path
+- `retrieval rebuild` rebuilds the local shard from current wiki pages and refreshes `state/retrieval/manifest.json`
+- `retrieval doctor` checks for stale or missing retrieval artifacts; add `--repair` to rebuild missing or stale artifacts immediately
 
 ### `swarmvault explore "<question>" [--steps <n>] [--format markdown|report|slides|chart|image]`
 
@@ -375,16 +385,25 @@ Run SwarmVault as a local MCP server over stdio. This exposes the vault to compa
 - `build_context_pack`
 - `list_context_packs`
 - `read_context_pack`
+- `start_task`
+- `update_task`
+- `finish_task`
+- `list_tasks`
+- `read_task`
+- `resume_task`
 - `start_memory_task`
 - `update_memory_task`
 - `finish_memory_task`
 - `list_memory_tasks`
 - `read_memory_task`
 - `resume_memory_task`
+- `retrieval_status`
+- `rebuild_retrieval`
+- `doctor_retrieval`
 
-`compile_vault` also accepts `maxTokens` for bounded wiki output, `blast_radius` traces reverse import impact for a file or module target, `build_context_pack` creates the same bounded agent evidence bundles as `swarmvault context build`, and the memory tools mirror `swarmvault memory`.
+`compile_vault` also accepts `maxTokens` for bounded wiki output, `blast_radius` traces reverse import impact for a file or module target, `build_context_pack` creates the same bounded agent evidence bundles as `swarmvault context build`, the task tools mirror `swarmvault task`, the memory tools mirror the compatibility command group, and retrieval tools inspect or repair the local index.
 
-The MCP surface also exposes `swarmvault://schema`, `swarmvault://sessions`, `swarmvault://sessions/{path}`, `swarmvault://context-packs`, `swarmvault://memory-tasks`, and includes `schemaPath` in `workspace_info`.
+The MCP surface also exposes `swarmvault://schema`, `swarmvault://sessions`, `swarmvault://sessions/{path}`, `swarmvault://context-packs`, `swarmvault://tasks`, `swarmvault://memory-tasks`, and includes `schemaPath` in `workspace_info`.
 
 ### `swarmvault graph serve`
 
@@ -575,15 +594,18 @@ Search behavior is configurable separately from provider routing:
 
 ```json
 {
-  "search": {
+  "retrieval": {
+    "backend": "sqlite",
+    "shardSize": 25000,
     "hybrid": true,
     "rerank": false
   }
 }
 ```
 
-- `search.hybrid` defaults to enabled and merges full-text hits with semantic page matches when an embedding-capable provider is available
-- `search.rerank` optionally asks the current `queryProvider` to rerank the merged top hits before query answers are generated
+- `retrieval.hybrid` defaults to enabled and merges full-text hits with semantic page matches when an embedding-capable provider is available
+- `retrieval.rerank` optionally asks the current `queryProvider` to rerank the merged top hits before query answers are generated
+- `retrieval.backend` currently supports the local SQLite backend
 
 ## Troubleshooting
 

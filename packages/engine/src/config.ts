@@ -224,6 +224,16 @@ const vaultConfigSchema = z.object({
       foldCommunitiesBelow: z.number().int().positive().optional()
     })
     .optional(),
+  retrieval: z
+    .object({
+      backend: z.literal("sqlite").optional(),
+      shardSize: z.number().int().positive().optional(),
+      hybrid: z.boolean().optional(),
+      rerank: z.boolean().optional(),
+      embeddingProvider: z.string().min(1).optional(),
+      maxIndexedRows: z.number().int().positive().optional()
+    })
+    .optional(),
   webSearch: z
     .object({
       providers: z.record(z.string(), webSearchProviderConfigSchema),
@@ -447,7 +457,13 @@ export function defaultVaultConfig(profile: VaultProfileConfig = defaultVaultPro
       classifyGlobs: {},
       extractClasses: ["first_party"]
     },
-    graphSinks: {}
+    graphSinks: {},
+    retrieval: {
+      backend: "sqlite",
+      shardSize: 25000,
+      hybrid: true,
+      rerank: false
+    }
   };
 }
 
@@ -598,6 +614,7 @@ export function resolvePaths(
   const projectsDir = path.join(wikiDir, "projects");
   const candidatesDir = path.join(wikiDir, "candidates");
   const stateDir = path.resolve(rootDir, effective.workspace.stateDir);
+  const retrievalDir = path.join(stateDir, "retrieval");
   const schedulesDir = path.join(stateDir, "schedules");
   const watchDir = path.join(stateDir, "watch");
   const managedSourcesDir = path.join(stateDir, "sources");
@@ -617,6 +634,8 @@ export function resolvePaths(
     candidateConceptsDir: path.join(candidatesDir, "concepts"),
     candidateEntitiesDir: path.join(candidatesDir, "entities"),
     stateDir,
+    retrievalDir,
+    retrievalManifestPath: path.join(retrievalDir, "manifest.json"),
     schedulesDir,
     agentDir,
     inboxDir,
@@ -625,7 +644,7 @@ export function resolvePaths(
     analysesDir: path.join(stateDir, "analyses"),
     viewerDistDir,
     graphPath: path.join(stateDir, "graph.json"),
-    searchDbPath: path.join(stateDir, "search.sqlite"),
+    searchDbPath: path.join(retrievalDir, "fts-000.sqlite"),
     compileStatePath: path.join(stateDir, "compile-state.json"),
     codeIndexPath: path.join(stateDir, "code-index.json"),
     embeddingsPath: path.join(stateDir, "embeddings.json"),
@@ -678,6 +697,7 @@ export async function initWorkspace(
     ensureDir(paths.candidateConceptsDir),
     ensureDir(paths.candidateEntitiesDir),
     ensureDir(paths.stateDir),
+    ensureDir(paths.retrievalDir),
     ensureDir(paths.schedulesDir),
     ensureDir(paths.watchDir),
     ensureDir(paths.managedSourcesDir),

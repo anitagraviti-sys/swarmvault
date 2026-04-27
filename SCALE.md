@@ -14,7 +14,7 @@ Warm compile budgets assume incremental compile on unchanged sources. Cold compi
 
 ## What degrades past each tier
 
-- **`state/search.sqlite` full-text index** — the SQLite FTS5 index stays fast up to the large tier. Above ~1 M indexed rows, plan on splitting the vault or moving the hybrid search layer to an external backend. Single-vault FTS is intentionally the 1.0 default; larger deployments are on the post-1.0 roadmap.
+- **`state/retrieval/` local index** — the SQLite FTS5 shard and retrieval manifest stay fast up to the large tier. Above ~1 M indexed rows, plan on splitting the vault or moving the hybrid search layer to an external backend. Use `swarmvault retrieval status|doctor|rebuild` to inspect freshness and repair the local shard.
 - **Graph compilation memory** — Louvain community detection plus god-node ranking keep the full graph in memory. Expect `node --max-old-space-size=8192 <bin>` once you cross the large tier.
 - **Similarity edge density** — above 10,000 nodes, the large-repo defaults automatically cap similarity edges (see `graph.similarityEdgeCap`) so the graph does not fan out into a clique. Tune `graph.similarityIdfFloor` upward to drop more low-IDF features when the cap still feels dense.
 - **Viewer interactivity** — the Cytoscape-based graph viewer handles up to ~10,000 visible nodes smoothly on a modern laptop. Use source-class filters, community filters, and tag filters to narrow the view; the standalone HTML export inherits the same limits.
@@ -48,7 +48,7 @@ You are outside SwarmVault's tested envelope. Options in order of effort:
 1. Split by project — most vaults above 50,000 sources have a natural split (multiple repos, multiple research programs). Use separate `swarmvault init` roots and point each at a focused subset.
 2. Use the Neo4j sink — push the compiled graph to Neo4j so heavy graph analytics run outside SwarmVault's Node process.
 3. Tune the knobs above aggressively and accept longer compile times.
-4. File an issue. Large-scale hybrid retrieval and rerank is on the post-1.0 roadmap, and concrete use cases inform that work.
+4. File an issue. External retrieval backends and larger multi-shard deployments remain roadmap work, and concrete use cases inform that work.
 
 ## Recorded measurements
 

@@ -2229,6 +2229,8 @@ describe("swarmvault workflow", () => {
     expect(tools.tools.some((tool) => tool.name === "workspace_info")).toBe(true);
     expect(tools.tools.some((tool) => tool.name === "query_vault")).toBe(true);
     expect(tools.tools.some((tool) => tool.name === "start_memory_task")).toBe(true);
+    expect(tools.tools.some((tool) => tool.name === "start_task")).toBe(true);
+    expect(tools.tools.some((tool) => tool.name === "retrieval_status")).toBe(true);
 
     const workspaceInfo = await client.callTool({ name: "workspace_info", arguments: {} });
     const workspaceContent = workspaceInfo.content as ToolContent;
@@ -2279,7 +2281,17 @@ describe("swarmvault workflow", () => {
     expect(JSON.parse((memoryRead.content as ToolContent)[0]?.text ?? "{}").id).toBe(memoryTaskId);
 
     const memoryResume = await client.callTool({ name: "resume_memory_task", arguments: { id: memoryTaskId, format: "llms" } });
-    expect(JSON.parse((memoryResume.content as ToolContent)[0]?.text ?? "{}").rendered).toContain("Agent Memory Resume");
+    expect(JSON.parse((memoryResume.content as ToolContent)[0]?.text ?? "{}").rendered).toContain("Agent Task Resume");
+
+    const taskStart = await client.callTool({
+      name: "start_task",
+      arguments: { goal: "Remember MCP task alias work", target: "notes.md", agent: "test-client" }
+    });
+    const taskId = JSON.parse((taskStart.content as ToolContent)[0]?.text ?? "{}").task.id as string;
+    expect(taskId).toBeTruthy();
+
+    const taskStatus = await client.callTool({ name: "retrieval_status", arguments: {} });
+    expect(JSON.parse((taskStatus.content as ToolContent)[0]?.text ?? "{}").configured.backend).toBe("sqlite");
 
     const configResource = await client.readResource({ uri: "swarmvault://config" });
     expect(configResource.contents[0]?.uri).toBe("swarmvault://config");
@@ -2294,6 +2306,9 @@ describe("swarmvault workflow", () => {
 
     const memoryResource = await client.readResource({ uri: "swarmvault://memory-tasks" });
     expect((memoryResource.contents[0] as { text: string }).text).toContain(memoryTaskId);
+
+    const taskResource = await client.readResource({ uri: "swarmvault://tasks" });
+    expect((taskResource.contents[0] as { text: string }).text).toContain(taskId);
 
     // A failing tool handler (e.g. get_node with an unknown target) must not
     // crash the server. The safeHandler wrapper should return an MCP error

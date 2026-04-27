@@ -59,19 +59,19 @@ Expected shape:
 - points at both `wiki/context/` and `state/context-packs/`
 - mentions omitted items when the token budget is too small
 
-## Memory ledger prompt
+## Task ledger prompt
 
 Prompt:
 
-> Start a durable task memory for the next agent working on auth, record a decision, and show how to resume it.
+> Start a durable task ledger for the next agent working on auth, record a decision, and show how to resume it.
 
 Expected shape:
 
-- uses `swarmvault memory start "<goal>" --target <path-or-node>`
-- records a decision or note with `swarmvault memory update <id>`
+- uses `swarmvault task start "<goal>" --target <path-or-node>`
+- records a decision or note with `swarmvault task update <id>`
 - points at both `wiki/memory/` and `state/memory/tasks/`
-- uses `swarmvault memory resume <id>` for the next-agent handoff
-- mentions that `query`, `explore`, and `context build` can attach to the task with `--memory <id>`
+- uses `swarmvault task resume <id>` for the next-agent handoff
+- mentions that `query`, `explore`, and `context build` can attach to the task with `--task <id>`, with `--memory <id>` as a compatibility alias
 
 ## Research prompt
 

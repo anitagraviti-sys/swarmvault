@@ -103,7 +103,7 @@ describe("compounding loop", () => {
     const result = await compileVault(rootDir);
     expect(result.pageCount).toBeGreaterThan(0);
     await expect(fs.access(path.join(rootDir, "state", "graph.json"))).resolves.toBeUndefined();
-    await expect(fs.access(path.join(rootDir, "state", "search.sqlite"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(rootDir, "state", "retrieval", "fts-000.sqlite"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(rootDir, "wiki", "index.md"))).resolves.toBeUndefined();
   });
 
