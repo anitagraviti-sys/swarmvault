@@ -62,6 +62,7 @@ Run:
 
 ```bash
 swarmvault compile
+swarmvault doctor
 ```
 
 Then verify:
@@ -74,6 +75,18 @@ Then verify:
 - `state/retrieval/`
 
 If the vault lives inside git and you want a quick graph-level delta, run `swarmvault diff`.
+
+## Vault doctor reports warnings
+
+`swarmvault doctor` is the broad health summary. It checks graph artifacts, retrieval, review queues, watch state, migrations, managed sources, and task ledgers, then prints concrete follow-up commands.
+
+Safe derived retrieval repairs can be applied with:
+
+```bash
+swarmvault doctor --repair
+```
+
+If the graph or wiki pages are missing, run `swarmvault compile`; if review or candidate counts are high, inspect `swarmvault review list` and `swarmvault candidate list`.
 
 ## Context pack is empty or missing expected evidence
 

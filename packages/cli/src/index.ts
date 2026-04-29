@@ -29,6 +29,7 @@ import {
   deleteContextPack,
   deleteManagedSource,
   doctorRetrieval,
+  doctorVault,
   downloadWhisperModel,
   explainGraphVault,
   exploreVault,
@@ -115,9 +116,9 @@ program
 function readCliVersion(): string {
   try {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string };
-    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "3.1.0";
+    return typeof packageJson.version === "string" && packageJson.version.trim() ? packageJson.version : "3.2.0";
   } catch {
-    return "3.1.0";
+    return "3.2.0";
   }
 }
 
@@ -2578,6 +2579,31 @@ program
       }
       if (diff.removedEdges.length > 20) {
         log(`  ... and ${diff.removedEdges.length - 20} more`);
+      }
+    }
+  });
+
+program
+  .command("doctor")
+  .description("Diagnose vault health across graph, retrieval, review queues, watch state, and migrations.")
+  .option("--repair", "Run safe repairs such as rebuilding stale retrieval artifacts", false)
+  .action(async (options: { repair?: boolean }) => {
+    const report = await doctorVault(process.cwd(), { repair: options.repair });
+    if (isJson()) {
+      emitJson(report);
+      return;
+    }
+    log(`Vault health: ${report.status}${report.repaired.length ? ` (repaired: ${report.repaired.join(", ")})` : ""}`);
+    log(
+      `Sources ${report.counts.sources} | Managed ${report.counts.managedSources} | Pages ${report.counts.pages} | Nodes ${report.counts.nodes} | Edges ${report.counts.edges}`
+    );
+    for (const check of report.checks) {
+      log(`[${check.status}] ${check.label}: ${check.summary}`);
+      if (check.detail) {
+        log(`  ${check.detail}`);
+      }
+      for (const action of check.actions ?? []) {
+        log(`  Try: ${action.command} - ${action.description}`);
       }
     }
   });

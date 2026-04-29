@@ -52,6 +52,8 @@ swarmvault task finish <task-id> --outcome "Task completed" --follow-up "Run rel
 swarmvault task resume <task-id> --format llms
 swarmvault retrieval status
 swarmvault retrieval doctor --repair
+swarmvault doctor
+swarmvault doctor --repair
 swarmvault explore "<question>" --steps 3
 swarmvault lint
 swarmvault lint --conflicts

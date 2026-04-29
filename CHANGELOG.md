@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.0
+
+- Added `swarmvault doctor [--repair]` as a whole-vault health check for graph artifacts, retrieval, review queues, watch status, migration state, managed sources, page counts, and task ledgers, with structured `--json` output and safe retrieval repair.
+- Exposed the same vault doctor through MCP as `doctor_vault`, while keeping the narrower retrieval tools available for index-specific checks and repairs.
+- Expanded `graph serve` into a workbench: the viewer now surfaces vault health, one-click repair, richer inbox/browser capture, context-pack creation, and task start actions backed by new viewer API endpoints.
+- Bumped OSS packages, viewer, Obsidian plugin metadata, MCP-facing version, ClawHub skill metadata, and desktop package metadata to `3.2.0`; the desktop UI now reads its displayed version from the packaged app instead of hardcoding it.
+
 ## 3.1.0
 
 - Extended `swarmvault install --agent` with 32 additional coding agents (amp, augment, adal, bob, cline, codebuddy, command-code, continue, cortex, crush, deepagents, firebender, iflow, junie, kilo-code, kimi, kode, mcpjam, mistral-vibe, mux, neovate, openclaw, openhands, pochi, qoder, qwen-code, replit, roo-code, trae-cn, warp, windsurf, zencoder), each writing a project-level skill bundle to that tool's conventional skills directory.

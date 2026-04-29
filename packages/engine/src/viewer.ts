@@ -8,11 +8,15 @@ import { promisify } from "node:util";
 import matter from "gray-matter";
 import mime from "mime-types";
 import { loadVaultConfig } from "./config.js";
+import { buildContextPack } from "./context-packs.js";
+import { doctorVault } from "./doctor.js";
 import { buildViewerGraphArtifact } from "./graph-presentation.js";
-import { ingestInput } from "./ingest.js";
-import { listMemoryTasks } from "./memory.js";
+import { addInput, importInbox, ingestInput } from "./ingest.js";
+import { finishMemoryTask, listMemoryTasks, startMemoryTask, updateMemoryTask } from "./memory.js";
 import { normalizeOutputAssets } from "./pages.js";
+import { doctorRetrieval } from "./retrieval.js";
 import { searchPages } from "./search.js";
+import { reloadManagedSources } from "./sources.js";
 import type { GraphArtifact, GraphReportArtifact, LintFinding } from "./types.js";
 import { fileExists, isPathWithin, readJsonFile } from "./utils.js";
 import {
@@ -158,6 +162,58 @@ async function readJsonBody(request: http.IncomingMessage): Promise<Record<strin
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
+function slugForClip(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/[\s_-]+/g, "-")
+    .slice(0, 80);
+  return normalized || "clip";
+}
+
+async function writeInboxClip(
+  rootDir: string,
+  body: Record<string, unknown>
+): Promise<{ mode: "inbox"; inboxPath: string; result: Awaited<ReturnType<typeof importInbox>> }> {
+  const { paths } = await loadVaultConfig(rootDir);
+  const title =
+    typeof body.title === "string" && body.title.trim()
+      ? body.title.trim()
+      : typeof body.url === "string" && body.url.trim()
+        ? body.url.trim()
+        : "Browser Clip";
+  const clipUrl = typeof body.url === "string" ? body.url.trim() : "";
+  const markdown = typeof body.markdown === "string" ? body.markdown.trim() : "";
+  const selectionText = typeof body.selectionText === "string" ? body.selectionText.trim() : "";
+  const selectionHtml = typeof body.selectionHtml === "string" ? body.selectionHtml.trim() : "";
+  const tags = Array.isArray(body.tags) ? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0) : [];
+  const now = new Date().toISOString();
+  const fileName = `${now.replace(/[:.]/g, "-")}-${slugForClip(title)}.md`;
+  const inboxPath = path.join(paths.inboxDir, fileName);
+  await fs.mkdir(paths.inboxDir, { recursive: true });
+  const lines = [
+    "---",
+    `title: ${JSON.stringify(title)}`,
+    clipUrl ? `clip_url: ${JSON.stringify(clipUrl)}` : undefined,
+    `captured_at: ${JSON.stringify(now)}`,
+    tags.length ? `tags: ${JSON.stringify(tags)}` : undefined,
+    "---",
+    "",
+    `# ${title}`,
+    "",
+    clipUrl ? `Source: ${clipUrl}` : undefined,
+    "",
+    markdown || selectionText || selectionHtml || clipUrl,
+    selectionHtml && !markdown ? ["", "## Original HTML", "", "```html", selectionHtml, "```"].join("\n") : undefined,
+    ""
+  ].filter((line): line is string => line !== undefined);
+  await fs.writeFile(inboxPath, lines.join("\n"), "utf8");
+  const result = await importInbox(rootDir, paths.inboxDir);
+  return { mode: "inbox", inboxPath, result };
+}
+
 async function ensureViewerDist(viewerDistDir: string): Promise<void> {
   const indexPath = path.join(viewerDistDir, "index.html");
   if (await fileExists(indexPath)) {
@@ -282,6 +338,146 @@ export async function startGraphServer(
         return;
       }
 
+      if (url.pathname === "/api/doctor" && request.method === "GET") {
+        const report = await doctorVault(rootDir);
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(report));
+        return;
+      }
+
+      if (url.pathname === "/api/doctor" && request.method === "POST") {
+        const body = await readJsonBody(request);
+        const report = await doctorVault(rootDir, { repair: body.repair === true });
+        if (report.repaired.length) {
+          viewerEventBus.publish({
+            type: "doctor",
+            level: "success",
+            message: `Doctor repaired ${report.repaired.join(", ")}.`
+          });
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(report));
+        return;
+      }
+
+      if (url.pathname === "/api/retrieval/repair" && request.method === "POST") {
+        const result = await doctorRetrieval(rootDir, { repair: true });
+        viewerEventBus.publish({
+          type: "retrieval",
+          level: result.ok ? "success" : "warning",
+          message: result.repaired ? "Retrieval index rebuilt." : "Retrieval repair completed with remaining warnings."
+        });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+        return;
+      }
+
+      if (url.pathname === "/api/context-pack" && request.method === "POST") {
+        const body = await readJsonBody(request);
+        const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+        if (!goal) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "Missing context-pack goal." }));
+          return;
+        }
+        const result = await buildContextPack(rootDir, {
+          goal,
+          target: typeof body.target === "string" ? body.target.trim() : undefined,
+          budgetTokens: typeof body.budgetTokens === "number" ? body.budgetTokens : undefined,
+          format: body.format === "llms" || body.format === "json" || body.format === "markdown" ? body.format : undefined
+        });
+        viewerEventBus.publish({
+          type: "memory",
+          level: "success",
+          message: `Built context pack ${result.pack.id}.`
+        });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+        return;
+      }
+
+      if (url.pathname === "/api/task" && request.method === "POST") {
+        const body = await readJsonBody(request);
+        const action = url.searchParams.get("action") ?? "start";
+        let result: unknown;
+        if (action === "start") {
+          const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+          if (!goal) {
+            response.writeHead(400, { "content-type": "application/json" });
+            response.end(JSON.stringify({ error: "Missing task goal." }));
+            return;
+          }
+          result = await startMemoryTask(rootDir, {
+            goal,
+            target: typeof body.target === "string" ? body.target.trim() : undefined,
+            budgetTokens: typeof body.budgetTokens === "number" ? body.budgetTokens : undefined,
+            agent: typeof body.agent === "string" ? body.agent.trim() : undefined,
+            contextPackId: typeof body.contextPackId === "string" ? body.contextPackId.trim() : undefined
+          });
+        } else if (action === "update") {
+          const id = typeof body.id === "string" ? body.id.trim() : "";
+          if (!id) {
+            response.writeHead(400, { "content-type": "application/json" });
+            response.end(JSON.stringify({ error: "Missing task id." }));
+            return;
+          }
+          result = await updateMemoryTask(rootDir, id, {
+            note: typeof body.note === "string" ? body.note : undefined,
+            decision: typeof body.decision === "string" ? body.decision : undefined,
+            changedPath: typeof body.changedPath === "string" ? body.changedPath : undefined,
+            contextPackId: typeof body.contextPackId === "string" ? body.contextPackId : undefined,
+            status:
+              body.status === "active" || body.status === "blocked" || body.status === "completed" || body.status === "archived"
+                ? body.status
+                : undefined
+          });
+        } else if (action === "finish") {
+          const id = typeof body.id === "string" ? body.id.trim() : "";
+          const outcome = typeof body.outcome === "string" ? body.outcome.trim() : "";
+          if (!id || !outcome) {
+            response.writeHead(400, { "content-type": "application/json" });
+            response.end(JSON.stringify({ error: "Missing task id or outcome." }));
+            return;
+          }
+          result = await finishMemoryTask(rootDir, id, {
+            outcome,
+            followUp: typeof body.followUp === "string" ? body.followUp : undefined
+          });
+        } else {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "Invalid task action." }));
+          return;
+        }
+        viewerEventBus.publish({
+          type: "memory",
+          level: "success",
+          message: `Task ${action} completed.`
+        });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+        return;
+      }
+
+      if (url.pathname === "/api/source/reload" && request.method === "POST") {
+        const body = await readJsonBody(request);
+        const result = await reloadManagedSources(rootDir, {
+          id: typeof body.id === "string" ? body.id.trim() : undefined,
+          all: body.all === true,
+          compile: body.compile !== false,
+          brief: body.brief !== false,
+          guide: body.guide === true,
+          review: body.review === true
+        });
+        viewerEventBus.publish({
+          type: "ingest",
+          level: "success",
+          message: `Reloaded ${result.sources.length} managed source${result.sources.length === 1 ? "" : "s"}.`
+        });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+        return;
+      }
+
       if (url.pathname === "/api/page") {
         const relativePath = url.searchParams.get("path") ?? "";
         const page = await readViewerPage(rootDir, relativePath);
@@ -389,14 +585,15 @@ export async function startGraphServer(
 
       if (url.pathname === "/api/workspace") {
         const reportPath = path.join(paths.wikiDir, "graph", "report.json");
-        const [graphRaw, reportRaw, approvalsRaw, candidatesRaw, memoryTasksRaw, watchStatusRaw, lintRaw] = await Promise.all([
+        const [graphRaw, reportRaw, approvalsRaw, candidatesRaw, memoryTasksRaw, watchStatusRaw, lintRaw, doctorRaw] = await Promise.all([
           readJsonFile<GraphArtifact>(paths.graphPath).catch(() => null),
           readJsonFile<GraphReportArtifact>(reportPath).catch(() => null),
           listApprovals(rootDir).catch(() => []),
           listCandidates(rootDir).catch(() => []),
           listMemoryTasks(rootDir).catch(() => []),
           getWatchStatus(rootDir).catch(() => ({ generatedAt: "", watchedRepoRoots: [], pendingSemanticRefresh: [] })),
-          lintVault(rootDir).catch(() => [] as LintFinding[])
+          lintVault(rootDir).catch(() => [] as LintFinding[]),
+          doctorVault(rootDir).catch(() => null)
         ]);
         const viewerGraph = graphRaw ? buildViewerGraphArtifact(graphRaw, { report: reportRaw, full: options.full ?? false }) : null;
         response.writeHead(200, { "content-type": "application/json" });
@@ -408,6 +605,7 @@ export async function startGraphServer(
             candidates: candidatesRaw,
             memoryTasks: memoryTasksRaw,
             watchStatus: watchStatusRaw,
+            doctor: doctorRaw,
             lintFindings: toViewerLintFindings(lintRaw)
           })
         );
@@ -447,14 +645,42 @@ export async function startGraphServer(
       if (url.pathname === "/api/clip" && request.method === "POST") {
         const body = await readJsonBody(request);
         const clipUrl = typeof body.url === "string" ? body.url.trim() : "";
-        if (!clipUrl) {
+        const hasInlineClip =
+          (typeof body.markdown === "string" && body.markdown.trim().length > 0) ||
+          (typeof body.selectionText === "string" && body.selectionText.trim().length > 0) ||
+          (typeof body.selectionHtml === "string" && body.selectionHtml.trim().length > 0);
+        if (!clipUrl && !hasInlineClip) {
           response.writeHead(400, { "content-type": "application/json" });
-          response.end(JSON.stringify({ error: "Missing url field." }));
+          response.end(JSON.stringify({ error: "Missing url or clip content." }));
           return;
         }
-        const manifest = await ingestInput(rootDir, clipUrl);
+        if (hasInlineClip || body.sourceMode === "inbox") {
+          const clip = await writeInboxClip(rootDir, body);
+          const imported = clip.result.imported[0];
+          response.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
+          response.end(
+            JSON.stringify({
+              ok: true,
+              mode: clip.mode,
+              inboxPath: clip.inboxPath,
+              sourceId: imported?.sourceId,
+              title: imported?.title ?? (typeof body.title === "string" ? body.title : "Browser Clip"),
+              importedCount: clip.result.imported.length,
+              skippedCount: clip.result.skipped.length
+            })
+          );
+          return;
+        }
+        const captured = body.sourceMode === "add" ? (await addInput(rootDir, clipUrl)).manifest : await ingestInput(rootDir, clipUrl);
         response.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
-        response.end(JSON.stringify({ ok: true, sourceId: manifest.sourceId, title: manifest.title }));
+        response.end(
+          JSON.stringify({
+            ok: true,
+            mode: body.sourceMode === "add" ? "add" : "ingest",
+            sourceId: captured.sourceId,
+            title: captured.title
+          })
+        );
         return;
       }
 

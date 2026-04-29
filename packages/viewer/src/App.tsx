@@ -19,6 +19,7 @@ import { StatsBar } from "./components/StatsBar";
 import { Tabs } from "./components/Tabs";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { UndoToast } from "./components/UndoToast";
+import { WorkbenchDashboard } from "./components/WorkbenchDashboard";
 import { useEventStream } from "./hooks/useEventStream";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { type Shortcut, useShortcuts } from "./hooks/useShortcuts";
@@ -28,6 +29,10 @@ import { useWorkspaceStore } from "./hooks/workspaceStore";
 import {
   applyCandidateAction,
   applyReviewAction,
+  captureToVault,
+  createContextPack,
+  createTask,
+  fetchDoctorReport,
   fetchGraphExplain,
   fetchGraphPath,
   fetchGraphQuery,
@@ -72,7 +77,19 @@ function persistRecentSearches(values: string[]): void {
 export function App() {
   const cyRef = useRef<Core | null>(null);
   const { state, refresh, loadApprovalDetail } = useWorkspaceStore();
-  const { graph, graphReport, approvals, approvalDetail, candidates, memoryTasks, watchStatus, lintFindings, loading, errors } = state;
+  const {
+    graph,
+    graphReport,
+    approvals,
+    approvalDetail,
+    candidates,
+    memoryTasks,
+    watchStatus,
+    lintFindings,
+    doctorReport,
+    loading,
+    errors
+  } = state;
   const { theme, setTheme } = useTheme();
   const { route, navigate } = useHashRoute();
   const undo = useUndoBuffer();
@@ -427,6 +444,68 @@ export function App() {
     [refresh]
   );
 
+  const handleDoctorRepair = useCallback(async () => {
+    setBusyAction("doctor:repair");
+    setActionError(null);
+    try {
+      await fetchDoctorReport({ repair: true });
+      await refresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction("");
+    }
+  }, [refresh]);
+
+  const handleCapture = useCallback(
+    async (payload: Parameters<typeof captureToVault>[0]) => {
+      setBusyAction("capture");
+      setActionError(null);
+      try {
+        await captureToVault(payload);
+        await refresh();
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [refresh]
+  );
+
+  const handleBuildContext = useCallback(
+    async (payload: { goal: string; target?: string; budgetTokens?: number }) => {
+      setBusyAction("context");
+      setActionError(null);
+      try {
+        await createContextPack(payload);
+        await refresh();
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [refresh]
+  );
+
+  const handleStartTask = useCallback(
+    async (payload: { goal: string; target?: string; budgetTokens?: number }) => {
+      setBusyAction("task:start");
+      setActionError(null);
+      try {
+        await createTask(payload);
+        await refresh();
+        setWorkflowTab("memory");
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [refresh]
+  );
+
   const handleGraphQuery = useCallback(async () => {
     if (!graphQueryInput.trim()) {
       setGraphQueryResult(null);
@@ -721,6 +800,16 @@ export function App() {
           candidateCount={candidates.length}
           pendingRefreshCount={watchStatus?.pendingSemanticRefresh.length ?? 0}
           benchmarkRatio={graphReport?.benchmark?.summary.reductionRatio ?? null}
+        />
+        <WorkbenchDashboard
+          doctorReport={doctorReport}
+          doctorError={errors.doctor}
+          busyAction={busyAction}
+          actionError={actionError}
+          onRepair={handleDoctorRepair}
+          onCapture={handleCapture}
+          onBuildContext={handleBuildContext}
+          onStartTask={handleStartTask}
         />
         {overviewMode ? (
           <div className="overview-banner" data-testid="graph-overview-banner">

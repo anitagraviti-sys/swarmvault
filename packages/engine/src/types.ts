@@ -1461,6 +1461,46 @@ export interface RetrievalDoctorResult {
   actions: string[];
 }
 
+export type VaultDoctorStatus = "ok" | "warning" | "error";
+
+export interface VaultDoctorAction {
+  command: string;
+  description: string;
+  destructive?: boolean;
+}
+
+export interface VaultDoctorCheck {
+  id: string;
+  label: string;
+  status: VaultDoctorStatus;
+  summary: string;
+  detail?: string;
+  actions?: VaultDoctorAction[];
+}
+
+export interface VaultDoctorCounts {
+  sources: number;
+  managedSources: number;
+  pages: number;
+  nodes: number;
+  edges: number;
+  approvalsPending: number;
+  candidates: number;
+  tasks: number;
+  pendingSemanticRefresh: number;
+}
+
+export interface VaultDoctorReport {
+  ok: boolean;
+  status: VaultDoctorStatus;
+  generatedAt: string;
+  rootDir: string;
+  version: string;
+  counts: VaultDoctorCounts;
+  checks: VaultDoctorCheck[];
+  repaired: string[];
+}
+
 export interface QueryOptions {
   question: string;
   save?: boolean;

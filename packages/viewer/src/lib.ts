@@ -276,12 +276,67 @@ export type ViewerLintFinding = {
   detectedAt?: string;
 };
 
+export type ViewerDoctorStatus = "ok" | "warning" | "error";
+
+export type ViewerDoctorAction = {
+  command: string;
+  description: string;
+  destructive?: boolean;
+};
+
+export type ViewerDoctorCheck = {
+  id: string;
+  label: string;
+  status: ViewerDoctorStatus;
+  summary: string;
+  detail?: string;
+  actions?: ViewerDoctorAction[];
+};
+
+export type ViewerDoctorReport = {
+  ok: boolean;
+  status: ViewerDoctorStatus;
+  generatedAt: string;
+  rootDir: string;
+  version: string;
+  counts: {
+    sources: number;
+    managedSources: number;
+    pages: number;
+    nodes: number;
+    edges: number;
+    approvalsPending: number;
+    candidates: number;
+    tasks: number;
+    pendingSemanticRefresh: number;
+  };
+  checks: ViewerDoctorCheck[];
+  repaired: string[];
+};
+
+export type ViewerActionResult = {
+  ok?: boolean;
+  error?: string;
+  [key: string]: unknown;
+};
+
+export type ViewerCapturePayload = {
+  url?: string;
+  title?: string;
+  selectionText?: string;
+  selectionHtml?: string;
+  markdown?: string;
+  tags?: string[];
+  sourceMode?: "ingest" | "add" | "inbox";
+};
+
 export type ViewerWorkspaceBundle = {
   graph: ViewerGraphArtifact;
   approvals: ViewerApprovalSummary[];
   candidates: ViewerCandidateRecord[];
   memoryTasks: ViewerMemoryTaskSummary[];
   watchStatus: ViewerWatchStatus;
+  doctor: ViewerDoctorReport | null;
   graphReport: ViewerGraphReport | null;
   lintFindings: ViewerLintFinding[];
 };
@@ -1065,6 +1120,79 @@ export async function fetchLintFindings(): Promise<ViewerLintFinding[]> {
     throw new Error(`Failed to load lint findings: ${response.status} ${response.statusText}`);
   }
   return response.json() as Promise<ViewerLintFinding[]>;
+}
+
+export async function fetchDoctorReport(options: { repair?: boolean } = {}): Promise<ViewerDoctorReport | null> {
+  if (embeddedData()) {
+    return null;
+  }
+  const response = await fetch("/api/doctor", {
+    method: options.repair ? "POST" : "GET",
+    headers: options.repair ? { "content-type": "application/json" } : undefined,
+    body: options.repair ? JSON.stringify({ repair: true }) : undefined
+  });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to load vault doctor report: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<ViewerDoctorReport>;
+}
+
+export async function captureToVault(payload: ViewerCapturePayload): Promise<ViewerActionResult> {
+  if (embeddedData()) {
+    throw new Error("Capture is unavailable in standalone exports.");
+  }
+  const response = await fetch("/api/clip", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to capture source: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<ViewerActionResult>;
+}
+
+export async function createContextPack(payload: {
+  goal: string;
+  target?: string;
+  budgetTokens?: number;
+  format?: "markdown" | "json" | "llms";
+}): Promise<ViewerActionResult> {
+  if (embeddedData()) {
+    throw new Error("Context-pack actions are unavailable in standalone exports.");
+  }
+  const response = await fetch("/api/context-pack", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to build context pack: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<ViewerActionResult>;
+}
+
+export async function createTask(payload: {
+  goal: string;
+  target?: string;
+  budgetTokens?: number;
+  agent?: string;
+}): Promise<ViewerActionResult> {
+  if (embeddedData()) {
+    throw new Error("Task actions are unavailable in standalone exports.");
+  }
+  const response = await fetch("/api/task?action=start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to start task: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<ViewerActionResult>;
 }
 
 export async function fetchWorkspaceBundle(): Promise<ViewerWorkspaceBundle | null> {

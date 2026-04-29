@@ -17,6 +17,7 @@ swarmvault ingest ./analysis.xlsx
 swarmvault ingest ./deck.pptx
 swarmvault inbox import ./capture-bundle
 swarmvault compile
+swarmvault doctor
 swarmvault query "What are the main claims and conflicts?"
 swarmvault context build "Review the main claims and conflicts" --target "main claims" --budget 8000
 swarmvault explore "What should I read next?" --steps 3
@@ -27,6 +28,7 @@ swarmvault explore "What should I read next?" --steps 3
 - `raw/sources/` contains normalized markdown captures for `add`
 - `state/extracts/` contains PDF, DOCX, EPUB, CSV/TSV, XLSX, PPTX, audio, YouTube, or image extraction sidecars when relevant
 - `wiki/graph/report.md` surfaces contradictions, surprise links, and benchmark data
+- `swarmvault doctor` reports whether graph and retrieval artifacts are ready for query or handoff
 - `wiki/outputs/` contains saved query and explore outputs
 - `wiki/context/` and `state/context-packs/` contain saved review packs when `context build` is used
 

@@ -3,6 +3,7 @@ import {
   fetchApprovalDetail,
   fetchApprovals,
   fetchCandidates,
+  fetchDoctorReport,
   fetchGraphArtifact,
   fetchGraphReport,
   fetchLintFindings,
@@ -11,6 +12,7 @@ import {
   type ViewerApprovalDetail,
   type ViewerApprovalSummary,
   type ViewerCandidateRecord,
+  type ViewerDoctorReport,
   type ViewerGraphArtifact,
   type ViewerGraphReport,
   type ViewerLintFinding,
@@ -27,6 +29,7 @@ export type WorkspaceState = {
   memoryTasks: ViewerMemoryTaskSummary[];
   watchStatus: ViewerWatchStatus | null;
   lintFindings: ViewerLintFinding[];
+  doctorReport: ViewerDoctorReport | null;
   loading: boolean;
   errors: {
     graph?: string;
@@ -35,6 +38,7 @@ export type WorkspaceState = {
     memory?: string;
     watch?: string;
     lint?: string;
+    doctor?: string;
   };
 };
 
@@ -62,6 +66,7 @@ const initialState: WorkspaceState = {
   memoryTasks: [],
   watchStatus: null,
   lintFindings: [],
+  doctorReport: null,
   loading: true,
   errors: {}
 };
@@ -99,7 +104,7 @@ export function useWorkspaceStore() {
     inFlight.current = true;
     try {
       const errors: WorkspaceState["errors"] = {};
-      const [graph, approvals, candidates, memoryTasks, watchStatus, lintFindings] = await Promise.all([
+      const [graph, approvals, candidates, memoryTasks, watchStatus, lintFindings, doctorReport] = await Promise.all([
         fetchGraphArtifact().catch(() => emptyGraph()),
         fetchApprovals().catch((error: unknown) => {
           errors.approval = error instanceof Error ? error.message : String(error);
@@ -120,6 +125,10 @@ export function useWorkspaceStore() {
         fetchLintFindings().catch((error: unknown) => {
           errors.lint = error instanceof Error ? error.message : String(error);
           return [] as ViewerLintFinding[];
+        }),
+        fetchDoctorReport().catch((error: unknown) => {
+          errors.doctor = error instanceof Error ? error.message : String(error);
+          return null;
         })
       ]);
       const graphReport = await fetchGraphReport().catch(() => null);
@@ -134,6 +143,7 @@ export function useWorkspaceStore() {
             memoryTasks,
             watchStatus,
             lintFindings,
+            doctorReport,
             errors
           }
         });

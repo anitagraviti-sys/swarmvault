@@ -2281,6 +2281,7 @@ describe("swarmvault workflow", () => {
     expect(tools.tools.some((tool) => tool.name === "start_memory_task")).toBe(true);
     expect(tools.tools.some((tool) => tool.name === "start_task")).toBe(true);
     expect(tools.tools.some((tool) => tool.name === "retrieval_status")).toBe(true);
+    expect(tools.tools.some((tool) => tool.name === "doctor_vault")).toBe(true);
 
     const workspaceInfo = await client.callTool({ name: "workspace_info", arguments: {} });
     const workspaceContent = workspaceInfo.content as ToolContent;
@@ -2342,6 +2343,10 @@ describe("swarmvault workflow", () => {
 
     const taskStatus = await client.callTool({ name: "retrieval_status", arguments: {} });
     expect(JSON.parse((taskStatus.content as ToolContent)[0]?.text ?? "{}").configured.backend).toBe("sqlite");
+
+    const doctorStatus = await client.callTool({ name: "doctor_vault", arguments: {} });
+    const parsedDoctor = JSON.parse((doctorStatus.content as ToolContent)[0]?.text ?? "{}") as { checks?: Array<{ id: string }> };
+    expect(parsedDoctor.checks?.some((check) => check.id === "graph")).toBe(true);
 
     const configResource = await client.readResource({ uri: "swarmvault://config" });
     expect(configResource.contents[0]?.uri).toBe("swarmvault://config");

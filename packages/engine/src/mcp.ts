@@ -6,6 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadVaultConfig } from "./config.js";
 import { buildContextPack, listContextPacks, readContextPack } from "./context-packs.js";
+import { doctorVault } from "./doctor.js";
 import { ingestInputDetailed, listManifests } from "./ingest.js";
 import { finishMemoryTask, listMemoryTasks, readMemoryTask, resumeMemoryTask, startMemoryTask, updateMemoryTask } from "./memory.js";
 import { runMigration } from "./migrate.js";
@@ -40,7 +41,7 @@ import {
 } from "./vault.js";
 import { getWatchStatus } from "./watch.js";
 
-const SERVER_VERSION = "3.1.0";
+const SERVER_VERSION = "3.2.0";
 
 export async function createMcpServer(rootDir: string): Promise<McpServer> {
   const server = new McpServer({
@@ -105,6 +106,19 @@ export async function createMcpServer(rootDir: string): Promise<McpServer> {
     },
     safeHandler(async ({ repair }) => {
       return asToolText(await doctorRetrieval(rootDir, { repair }));
+    })
+  );
+
+  server.registerTool(
+    "doctor_vault",
+    {
+      description: "Diagnose vault health across graph, retrieval, review queues, watch state, and migrations.",
+      inputSchema: {
+        repair: z.boolean().optional().describe("Run safe repairs such as rebuilding stale retrieval artifacts")
+      }
+    },
+    safeHandler(async ({ repair }) => {
+      return asToolText(await doctorVault(rootDir, { repair }));
     })
   );
 

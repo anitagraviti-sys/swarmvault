@@ -19,6 +19,7 @@ Expected shape:
 - mentions `wiki/graph/share-card.md`, `wiki/graph/share-card.svg`, `wiki/graph/share-kit/`, `swarmvault graph share --post`, `swarmvault graph share --svg`, or `swarmvault graph share --bundle` when the user wants a copyable, visual, or portable summary
 - mentions `swarmvault context build`, `wiki/context/`, or `state/context-packs/` when the user asks for agent handoff or bounded review context
 - mentions `swarmvault memory`, `wiki/memory/`, or `state/memory/tasks/` when the user asks for durable task memory or handoff history
+- uses or suggests `swarmvault doctor` when the user asks whether the vault is ready for handoff, query, or viewer inspection
 
 ## Managed source prompt
 
@@ -112,5 +113,6 @@ Expected shape:
 - may suggest `graph export --report`, `graph export --html-standalone`, `graph export --canvas`, or `graph export --obsidian` when a lighter shareable artifact is a better fit
 - may suggest `swarmvault diff` when the user is asking what a compile changed
 - may use `graph blast <target>` when the user is asking about change impact instead of broad graph browsing
+- may run `swarmvault doctor` before opening the live workspace when the vault health is uncertain
 - mentions `swarmvault mcp`
 - prefers existing report and graph artifacts when already present

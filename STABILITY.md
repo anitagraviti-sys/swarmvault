@@ -39,6 +39,7 @@ Stable:
 | `swarmvault task start\|update\|finish\|list\|show\|resume` | Stable | 3.0.0 |
 | `swarmvault memory start\|update\|finish\|list\|show\|resume` | Stable compatibility alias | 2.0.0 |
 | `swarmvault retrieval status\|rebuild\|doctor [--repair]` | Stable | 3.0.0 |
+| `swarmvault doctor [--repair]` | Stable | 3.2.0 |
 | `swarmvault explore <question> [--steps <n>] [--format ...] [--gap-fill] [--task <id>] [--memory <id>]` | Stable | 0.7.x (`--gap-fill` since 0.10.0, `--task` since 3.0.0) |
 | `swarmvault lint [--deep\|--no-deep] [--web] [--conflicts] [--decay] [--tiers]` | Stable | 0.1.0 (`--decay`/`--tiers` since 0.10.0) |
 | `swarmvault review list\|show\|accept\|reject` | Stable | 0.7.x |
@@ -93,7 +94,7 @@ Unknown keys are preserved by `swarmvault migrate` but are not covered by the st
 
 Stable tools exposed over stdio:
 
-`ingest`, `compile`, `query`, `explore`, `lint`, `search`, `page`, `source_list`, `candidate_list`, `promote_candidate`, `archive_candidate`, `preview_candidate_scores`, `auto_promote_candidates`, `list_approvals`, `read_approval`, `review_decision`, `blast_radius`, `build_context_pack`, `list_context_packs`, `read_context_pack`, `start_task`, `update_task`, `finish_task`, `list_tasks`, `read_task`, `resume_task`, `start_memory_task`, `update_memory_task`, `finish_memory_task`, `list_memory_tasks`, `read_memory_task`, `resume_memory_task`, `retrieval_status`, `rebuild_retrieval`, `doctor_retrieval`, `list_godnodes`, `list_hyperedges`, `explain_graph`, `path_graph`, `query_graph`, `watch_status`, `consolidate`, `migrate`.
+`ingest`, `compile`, `query`, `explore`, `lint`, `search`, `page`, `source_list`, `candidate_list`, `promote_candidate`, `archive_candidate`, `preview_candidate_scores`, `auto_promote_candidates`, `list_approvals`, `read_approval`, `review_decision`, `blast_radius`, `build_context_pack`, `list_context_packs`, `read_context_pack`, `start_task`, `update_task`, `finish_task`, `list_tasks`, `read_task`, `resume_task`, `start_memory_task`, `update_memory_task`, `finish_memory_task`, `list_memory_tasks`, `read_memory_task`, `resume_memory_task`, `retrieval_status`, `rebuild_retrieval`, `doctor_retrieval`, `doctor_vault`, `list_godnodes`, `list_hyperedges`, `explain_graph`, `path_graph`, `query_graph`, `watch_status`, `consolidate`, `migrate`.
 
 ## Page frontmatter fields
 

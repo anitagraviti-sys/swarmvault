@@ -13,6 +13,7 @@ export {
   renderContextPackLlms,
   renderContextPackMarkdown
 } from "./context-packs.js";
+export { doctorVault } from "./doctor.js";
 export {
   applyDecayToPages,
   computeDecayScore,

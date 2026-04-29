@@ -31,6 +31,7 @@ swarmvault graph share --svg ./share-card.svg
 swarmvault graph share --bundle ./share-kit
 swarmvault context build "Ship this feature safely" --target ./src
 swarmvault task start "Ship this feature safely" --target ./src
+swarmvault doctor
 ```
 
 手元にリポジトリがない場合は、組み込みデモをお試しください —— 3 つのサンプルソースで vault を作成し、グラフビューアを開きます：
@@ -52,6 +53,7 @@ swarmvault demo
 - **Share kit** —— `wiki/graph/share-card.md`、`wiki/graph/share-card.svg`、`wiki/graph/share-kit/`、`swarmvault graph share --post`、`swarmvault graph share --svg`、`swarmvault graph share --bundle` によるコピー可能、視覚的、HTML preview 付きの初回サマリー
 - **Context packs** —— 目的、対象、token 予算に合わせた agent-ready な evidence bundle を `wiki/context/` と `state/context-packs/` に保存
 - **Agent task ledger** —— `swarmvault task start|update|finish|resume` がローカルで git-friendly な task history を `wiki/memory/` と `state/memory/` に保存します。`memory` は互換 alias として残ります
+- **Vault doctor とワークベンチ** —— `swarmvault doctor [--repair]`、MCP `doctor_vault`、グラフビューアの health strip が graph、retrieval、review、watch、migration、managed sources、task state をまとめて確認します
 
 ### 三層アーキテクチャ
 
@@ -93,6 +95,7 @@ Karpathy の [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9
 | ビジュアル + 投稿しやすい share kit | — | **あり** |
 | agent-ready context packs | — | **あり** |
 | agent memory ledger | — | **あり** |
+| Vault doctor + workbench | — | **あり** |
 | 30+ 入力フォーマット | — | **あり** |
 | コード対応（tree-sitter AST） | — | **あり** |
 | オフライン / API キー不要 | — | **あり** |
@@ -169,6 +172,7 @@ swarmvault query "What is the auth flow?"
 swarmvault context build "Implement the auth refactor" --target ./src --budget 8000
 swarmvault task start "Implement the auth refactor" --target ./src --agent codex
 swarmvault retrieval status
+swarmvault doctor --repair
 swarmvault graph serve
 swarmvault graph export --report ./exports/report.html
 swarmvault graph export --obsidian ./exports/graph-vault
@@ -178,6 +182,8 @@ swarmvault graph push neo4j --dry-run
 ローカル repo や docs ツリーを最短で一度見たい場合は、`swarmvault scan ./path --no-serve` を使います。現在のディレクトリを vault として初期化し、そのディレクトリを取り込み、compile まで実行し、`--no-serve` ならグラフビューアは起動しません。`wiki/graph/share-card.md`、`wiki/graph/share-card.svg`、`wiki/graph/share-kit/` も残るため、`swarmvault graph share --post` で短い共有用サマリーを出力し、`swarmvault graph share --svg ./share-card.svg` でビジュアルカードを生成し、`swarmvault graph share --bundle ./share-kit` で markdown、投稿テキスト、SVG、自包含 HTML preview、JSON metadata を含む portable folder を作成できます。
 
 `swarmvault context build "<goal>" --target <path-or-node> --budget <tokens>` は、次の agent 作業に必要なページ、ノード、エッジ、根拠を token 予算内にまとめます。出力形式は `--format markdown|json|llms` で選べ、保存済み bundle は `swarmvault context list` と `swarmvault context show <id>` で再利用できます。長めの作業では `swarmvault task start "<goal>" --target <path-or-node>` で永続 task ledger を作成し、`task update` で notes、decisions、changed paths、linked packs を記録し、`task resume <id>` で次の agent 向け handoff を出力します。既存の `memory` commands と `--memory <id>` flags は同じ task ledger の互換 alias として残ります。
+
+agent に渡す前や viewer を開く前に素早く状態を見るには、`swarmvault doctor` を使います。graph、retrieval、review queue、watch status、migration state、managed sources、task ledger を確認し、`--repair` では安全に再生成できる retrieval artifacts を rebuild します。`swarmvault graph serve` のワークベンチにも同じ doctor summary が表示され、capture、context-pack、task-start actions を実行できます。
 
 実データを入れる前にゼロ設定の体験をしたい場合は、`swarmvault demo --no-serve` も使えます。内蔵ソースを持つ一時的な sample vault を作成し、そのまま compile します。
 
@@ -387,6 +393,8 @@ clawhub install swarmvault
 
 **Agent task ledger** - `swarmvault task start|update|finish|resume` は、task goal、linked context packs、decisions、graph evidence、touched paths、outcomes、follow-ups を git-friendly な JSON と Markdown として `state/memory/tasks/` と `wiki/memory/tasks/` に保存します。Compile は task と decision をグラフに含めます。既存の `memory` commands は互換 alias として残ります。
 
+**Vault doctor とワークベンチ** - `swarmvault doctor [--repair]` は graph artifacts、retrieval、review queue、watch state、migration、managed sources、source/page counts、task state を確認します。グラフビューアのワークベンチは同じ health summary を表示し、repair、rich capture、context-pack、task-start actions を実行できます。
+
 **レビュー可能な変更** - `compile --approve` は変更を approval bundles として段階化します。新しい concepts と entities はまず `wiki/candidates/` に入るため、黙って変更されません。
 
 **設定可能な profile** - `swarmvault.config.json` の `profile.presets`、`profile.dashboardPack`、`profile.guidedSessionMode`、`profile.guidedIngestDefault`、`profile.deepLintDefault`、`profile.dataviewBlocks` を組み合わせて、自分向けの vault mode を作れます。`personal-research` はあくまで built-in preset alias です。
@@ -419,9 +427,9 @@ clawhub install swarmvault
 
 **16 つの agent integration** - Codex、Claude Code、Cursor、Goose、Pi、Gemini CLI、OpenCode、Aider、GitHub Copilot CLI、Trae、Claw/OpenClaw、Droid、Kiro、Hermes、Google Antigravity、VS Code Copilot Chat 用のインストール規則があります。任意の graph-first hooks により、対応エージェントは広い検索の前に wiki を優先します。
 
-**MCP server** - `swarmvault mcp` は context-pack、task-ledger、互換 memory-task、retrieval health tools を含むボルト操作を stdio 経由で互換エージェントクライアントへ公開します。
+**MCP server** - `swarmvault mcp` は context-pack、task-ledger、互換 memory-task、vault doctor、retrieval health tools を含むボルト操作を stdio 経由で互換エージェントクライアントへ公開します。
 
-**組み込みブラウザ clipper** - `graph serve` はローカルの `/api/bookmarklet` ページと `/api/clip` エンドポイントを公開し、実行中の vault に現在のブラウザ URL をワンクリックで取り込めます。
+**組み込みブラウザ clipper** - `graph serve` はローカルの `/api/bookmarklet` ページと `/api/clip` エンドポイントを公開し、workbench または bookmarklet から現在のブラウザ URL、選択テキスト、Markdown、HTML excerpt、tags を実行中の vault に取り込めます。
 
 **Automation** - watch mode、git hooks、定期実行、inbox import により、ボルトを手動更新なしで最新に保てます。
 

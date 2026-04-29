@@ -47,6 +47,7 @@ swarmvault query "What keeps recurring?" --commit
 swarmvault context build "Ship this feature safely" --target ./src --budget 8000
 swarmvault task start "Ship this feature safely" --target ./src --agent codex
 swarmvault retrieval status
+swarmvault doctor --repair
 swarmvault query "Turn this into slides" --format slides
 swarmvault explore "What should I research next?" --steps 3
 swarmvault lint --deep
@@ -114,6 +115,16 @@ Compare the current `state/graph.json` against the last committed graph in git.
 - when a prior committed graph exists, prints added and removed nodes, pages, and edges
 - when no git baseline exists, falls back to a summary of the current graph state
 - supports `--json` for structured automation output
+
+### `swarmvault doctor [--repair]`
+
+Run a whole-vault health check before handing the workspace to an agent or opening the live viewer.
+
+- checks workspace config and schema presence
+- reports graph, page, source, review, candidate, task, watch, migration, and retrieval state
+- emits suggested follow-up commands for warnings and errors
+- supports `--json` for structured automation output
+- add `--repair` to rebuild safe derived retrieval artifacts
 
 ### `swarmvault source add|list|reload|review|guide|session|delete`
 
@@ -400,16 +411,17 @@ Run SwarmVault as a local MCP server over stdio. This exposes the vault to compa
 - `retrieval_status`
 - `rebuild_retrieval`
 - `doctor_retrieval`
+- `doctor_vault`
 
-`compile_vault` also accepts `maxTokens` for bounded wiki output, `blast_radius` traces reverse import impact for a file or module target, `build_context_pack` creates the same bounded agent evidence bundles as `swarmvault context build`, the task tools mirror `swarmvault task`, the memory tools mirror the compatibility command group, and retrieval tools inspect or repair the local index.
+`compile_vault` also accepts `maxTokens` for bounded wiki output, `blast_radius` traces reverse import impact for a file or module target, `build_context_pack` creates the same bounded agent evidence bundles as `swarmvault context build`, the task tools mirror `swarmvault task`, the memory tools mirror the compatibility command group, `doctor_vault` mirrors `swarmvault doctor`, and retrieval tools inspect or repair the local index.
 
 The MCP surface also exposes `swarmvault://schema`, `swarmvault://sessions`, `swarmvault://sessions/{path}`, `swarmvault://context-packs`, `swarmvault://tasks`, `swarmvault://memory-tasks`, and includes `schemaPath` in `workspace_info`.
 
 ### `swarmvault graph serve`
 
-Start the local graph workspace backed by `state/graph.json`, `/api/search`, `/api/page`, and local graph query/path/explain endpoints.
+Start the local graph workspace backed by `state/graph.json`, `/api/search`, `/api/page`, local graph query/path/explain endpoints, and the workbench APIs for doctor, retrieval repair, capture, context packs, task start, and source reload.
 
-It also exposes `/api/bookmarklet` and `/api/clip`, so a running local viewer can ingest the current browser page through a bookmarklet without leaving the browser.
+It also exposes `/api/bookmarklet` and `/api/clip`, so a running local viewer can capture the current browser URL, selected text, markdown, HTML excerpts, and tags through the workbench or bookmarklet without leaving the browser.
 
 ### `swarmvault graph query "<question>" [--dfs] [--budget <n>]`
 

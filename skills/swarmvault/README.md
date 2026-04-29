@@ -66,6 +66,7 @@ swarmvault graph share --bundle ./share-kit
 swarmvault query "What is the auth flow?"
 swarmvault context build "Implement the auth refactor" --target ./src --budget 8000
 swarmvault task start "Implement the auth refactor" --target ./src --agent codex
+swarmvault doctor --repair
 swarmvault graph blast ./src/index.ts
 swarmvault graph serve
 swarmvault graph export --report ./exports/report.html
@@ -82,6 +83,8 @@ For very large graphs, `swarmvault graph serve` and `swarmvault graph export --h
 `swarmvault context build "<goal>" --target <path-or-node> --budget <tokens>` creates an agent-ready evidence pack from the compiled vault. It saves JSON under `state/context-packs/`, writes a markdown companion under `wiki/context/`, reports omitted items when the token budget is too small, and can print `markdown`, `json`, or `llms` output for kickoff prompts and handoffs.
 
 `swarmvault task start "<goal>" --target <path-or-node>` creates a durable task ledger and automatically links an initial context pack. Use `swarmvault task update <id> --note|--decision|--changed-path|--context-pack`, `swarmvault task finish <id> --outcome <text>`, and `swarmvault task resume <id> --format markdown|json|llms` to preserve decisions, evidence, touched files, outcomes, and follow-ups for the next agent. The older `memory` commands remain compatibility aliases.
+
+`swarmvault doctor` is the quickest whole-vault health check before an agent handoff or viewer session. It reports graph, retrieval, review queue, watch status, migration, managed-source, and task state; `--repair` rebuilds safe derived retrieval artifacts. The same summary is available in the graph viewer workbench and through MCP as `doctor_vault`.
 
 The default `heuristic` provider is a valid local/offline starting point. Add a model provider in `swarmvault.config.json` when you want richer synthesis quality or optional capabilities such as embeddings, vision, or image generation. The recommended fully-local setup is `ollama pull gemma4` wired up as the `compileProvider` and `queryProvider` (see the root README for the exact config block). Any supported provider works - OpenAI, Anthropic, Gemini, OpenRouter, Groq, Together, xAI, Cerebras, openai-compatible, or custom. Code files are always parsed locally via tree-sitter; only non-code text or image sources go to configured model providers.
 
@@ -132,8 +135,9 @@ The published ClawHub package is intentionally text-only in this release.
 5. Use `swarmvault ingest --guide`, `swarmvault source add --guide`, `swarmvault source reload --guide`, `swarmvault source guide <id>`, or `swarmvault source session <id>` when you want the stronger guided-session workflow. Set `profile.guidedIngestDefault: true` when guided mode should be the default for ingest/source commands, and use `--no-guide` to force the lighter path for a specific run. Profiles using `guidedSessionMode: "canonical_review"` stage approval-queued canonical page edits; `insights_only` profiles keep exploratory synthesis under `wiki/insights/`.
 6. Compile with `swarmvault compile`, use `compile --max-tokens <n>` when the generated wiki must fit a bounded context window, or use `compile --approve` when the change should land in the approval queue first.
 7. Inspect `wiki/`, `wiki/dashboards/`, and `state/` artifacts before broad re-search. When the vault lives inside git, `ingest|compile|query --commit` can commit those artifacts immediately after the run.
-8. Use `swarmvault query`, `swarmvault context build`, `swarmvault memory`, `swarmvault explore`, `swarmvault review`, `swarmvault candidate`, and `swarmvault lint` to keep the vault current and reviewable. Set `profile.deepLintDefault: true` when `lint` should run the advisory deep pass by default, and use `--no-deep` to force a structural-only run.
-9. Use `swarmvault graph share --post` for a quick copyable summary, `swarmvault graph share --svg [path]` for a visual share card, `swarmvault graph share --bundle [dir]` for a portable share kit, `swarmvault graph blast` for reverse-import impact checks, `swarmvault graph serve` for the live workspace, Memory dashboard, and bookmarklet clipper, `swarmvault graph export --report` for a self-contained HTML report, `swarmvault graph export` for other shareable formats, `swarmvault graph push neo4j`, or `swarmvault mcp` when the vault needs to be explored or shared elsewhere.
+8. Use `swarmvault query`, `swarmvault context build`, `swarmvault task`, `swarmvault memory`, `swarmvault explore`, `swarmvault review`, `swarmvault candidate`, and `swarmvault lint` to keep the vault current and reviewable. Set `profile.deepLintDefault: true` when `lint` should run the advisory deep pass by default, and use `--no-deep` to force a structural-only run.
+9. Use `swarmvault doctor [--repair]` when the vault needs one health summary before deeper troubleshooting or handoff.
+10. Use `swarmvault graph share --post` for a quick copyable summary, `swarmvault graph share --svg [path]` for a visual share card, `swarmvault graph share --bundle [dir]` for a portable share kit, `swarmvault graph blast` for reverse-import impact checks, `swarmvault graph serve` for the live workspace, health workbench, Memory dashboard, and bookmarklet clipper, `swarmvault graph export --report` for a self-contained HTML report, `swarmvault graph export` for other shareable formats, `swarmvault graph push neo4j`, or `swarmvault mcp` when the vault needs to be explored or shared elsewhere.
 
 ## What SwarmVault Writes
 
@@ -215,7 +219,7 @@ Expose the vault over MCP with:
 swarmvault mcp
 ```
 
-The MCP surface includes context-pack build/read/list, task start/update/finish/list/read/resume, compatibility memory task, and retrieval status/rebuild/doctor tools so host agents can request bounded evidence, keep a durable task ledger, and inspect retrieval health without shelling out to the CLI.
+The MCP surface includes context-pack build/read/list, task start/update/finish/list/read/resume, compatibility memory task, `doctor_vault`, and retrieval status/rebuild/doctor tools so host agents can request bounded evidence, keep a durable task ledger, and inspect vault health without shelling out to the CLI.
 
 ## Links
 
